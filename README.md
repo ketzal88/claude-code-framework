@@ -634,3 +634,110 @@ Plugins are global (not per-project). Their skills auto-activate across all your
 7. **Build skills for your domain.** When Claude needs specialized knowledge (your API, your database patterns, your team's conventions), create a skill.
 
 The goal is not maximum configuration — it's zero repeated corrections.
+
+---
+
+## Swarm / Multi-Agent Patterns
+
+Beyond using plugins for parallel execution, we built a **reactive event layer** in our production app that lays the foundation for autonomous agent chains. These patterns apply to any system where multiple AI agents need to coordinate.
+
+### The Problem
+
+Before scaling agent chains (critic loops, fan-out digests, autonomous diagnostics), you need two things:
+1. **Cost visibility** — without per-feature cost tracking, "the swarm will pay for itself via cache hits" is a guess, not a number.
+2. **A shared signal bus** — agents need to react to "what happened" without re-reading entire databases.
+
+### Pattern 1: Brain Events (Signal Blackboard)
+
+A shared `brain_events` collection where any service can fire-and-forget a business-level signal:
+
+```ts
+// Alert engine emits after evaluation
+await BrainEventsService.record({
+  clientId: "abc123",
+  kind: "alert",
+  channel: "META",
+  severity: "critical",
+  code: "CPA_SPIKE",
+  message: "CPA jumped 45% vs 7d average",
+  source: "meta-alert-engine",
+  dedupeKey: "abc123:CPA_SPIKE:2026-04-16",  // idempotent
+});
+```
+
+**Key design decisions:**
+
+| Decision | Why |
+|----------|-----|
+| Fire-and-forget (never throws) | Producers don't know or care who consumes the event |
+| `dedupeKey` as doc ID | Retried crons don't double-write — same key = upsert |
+| Post-filter in memory | Avoids one composite index per filter dimension |
+| `consumed` + `consumedBy` fields | Digests mark events as seen so the next run skips them |
+| `cleanupOldRecords(45)` | Weekly cron garbage-collects — the collection doesn't grow forever |
+| BulkWriter for `recordMany()` | Alert engines produce 10-30 events per run — batch writes |
+
+**Consumers:**
+- Morning briefing queries `since(lastRunTimestamp)` instead of re-scanning all snapshots
+- AI Analyst includes recent events in context XML for zero-shot awareness
+- Future: Cron Doctor reads `kind: "cron"` events to detect failure patterns
+
+### Pattern 2: LLM Cost Tracking
+
+Every Claude/Gemini call gets a row in `llm_usage_events` with tokens, cost, and feature attribution:
+
+```ts
+await LlmUsageTracker.track({
+  feature: "ai-analyst",
+  step: "diagnose",
+  clientId: "abc123",
+  provider: "anthropic",
+  model: "claude-sonnet-4-6",
+  inputTokens: 12500,
+  outputTokens: 890,
+  cachedInputTokens: 10200,   // prompt cache hit
+  durationMs: 3400,
+  stopReason: "end_turn",
+});
+// costUsd computed automatically from built-in price table
+```
+
+**Why this matters for agent chains:**
+- Before adding a critic loop (Haiku reviews Sonnet's output), you need to prove the base cost
+- "Feature X costs $0.03/call with 80% cache hits" → adding a $0.008 Haiku critic is justified
+- Without this data, every agent chain proposal is vibes
+
+**Price table is in-code**, not a config file — one source of truth, includes cache read/write multipliers.
+
+### Pattern 3: Context Cache (Two-Tier)
+
+For the AI Analyst, each question rebuilds context from Firestore (10-50 reads). A two-tier cache eliminates redundant reads within a session:
+
+```
+Tier 1: In-process LRU Map (sub-ms, zero Firestore cost, dies with Lambda)
+Tier 2: Firestore doc with TTL (shared across instances, survives recycles)
+```
+
+**TTL is 5 minutes** — short because ad metrics move fast. Better to re-read than serve stale data during diagnosis.
+
+**Invalidation API exists but isn't wired yet** — the plan is sync crons call `invalidateClientContext()` after writing new snapshots. This is the natural bridge to event-driven invalidation via brain_events.
+
+### How These Three Connect
+
+```
+Sync crons → brain_event(kind:"sync") → invalidateClientContext()
+                                              ↓
+Alert engines → brain_event(kind:"alert") → morning briefing reads since(lastRun)
+                                              ↓
+AI Analyst ← context cache (warm) ← brain_events in context XML
+    ↓
+LLM usage tracker → /admin dashboard → proves cost before adding agents
+```
+
+The key insight: **build the observability layer before building the agents.** You can't optimize what you can't measure, and you can't coordinate agents without a shared signal bus.
+
+### Adopting This Pattern
+
+1. **Start with cost tracking.** Wire `LlmUsageTracker.track()` into every LLM call. This is 3 lines of code per call site.
+2. **Add brain events to your alert/sync services.** One `record()` call at the end of each engine run.
+3. **Build the context cache** only when you have a hot path (like a chat interface) that makes repeated DB reads.
+4. **Only then** build agent chains — now you have the data to justify the cost and the signals to coordinate them.
