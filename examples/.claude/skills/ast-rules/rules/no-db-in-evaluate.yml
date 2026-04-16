@@ -1,0 +1,11 @@
+id: no-db-in-evaluate
+language: TypeScript
+severity: error
+message: "DB access inside evaluate() breaks pure-computation contract."
+rule:
+  pattern: db.collection($$$)
+  inside:
+    kind: method_definition
+    has:
+      field: name
+      pattern: evaluate

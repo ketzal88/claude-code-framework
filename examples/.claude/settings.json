@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path',''); print('Run /test before committing.', file=sys.stderr) if 'src/lib/engines/' in p else None\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys,subprocess; d=json.load(sys.stdin); cmd=d.get('tool_input',{}).get('command',''); sys.exit(subprocess.call(['bash','scripts/check-no-secrets.sh'])) if cmd.startswith('git commit') else None\""
+          }
+        ]
+      }
+    ]
+  }
+}
