@@ -1,0 +1,36 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": [
+        "src/app/**/page.tsx",
+        "src/app/**/layout.tsx",
+        "src/app/**/loading.tsx",
+        "src/app/**/error.tsx",
+        "src/app/**/not-found.tsx",
+        "src/app/**/route.ts",
+        "src/app/**/route.tsx",
+        "src/middleware.ts",
+        "next.config.{js,mjs,ts}",
+        "tailwind.config.{js,ts}",
+        "postcss.config.{js,mjs}",
+        "playwright.config.{js,ts}",
+        "scripts/*.{ts,js,cjs}",
+        "e2e/**/*.spec.ts"
+    ],
+    "project": [
+        "src/**/*.{ts,tsx}",
+        "scripts/**/*.{ts,js,cjs}",
+        "e2e/**/*.{ts,tsx}"
+    ],
+    "ignore": [
+        ".next/**",
+        "node_modules/**",
+        "public/**"
+    ],
+    "ignoreDependencies": [
+        "autoprefixer",
+        "postcss",
+        "tailwindcss",
+        "eslint-config-next"
+    ],
+    "ignoreExportsUsedInFile": true
+}

@@ -1,7 +1,7 @@
 # Claude Code Setup Guide — Worker Brain
 
 > How we configured Claude Code for a production Next.js 14 + Firebase + Vercel SaaS.
-> 12 slash commands, 7 diagnostic subagents, 6 AST rules, 5 automated hooks, 14 development workflow skills.
+> 12 slash commands, 7 diagnostic subagents, 6 AST rules, 6 automated hooks (incl. Stop hook dead-code ratchet), 14 development workflow skills.
 > Zero TS errors policy, pure-computation engines, TDD discipline, and a commit-checkpoint workflow that blocks regressions.
 
 ---
@@ -239,6 +239,77 @@ Advisory reminder to run `npm run test:pre-push` (TypeScript + alerts + pure fun
 ### Hook 5: Critical Utility Change (PostToolUse on Edit/Write)
 
 When `objective-utils.ts`, `date-utils.ts`, or `cron-auth.ts` is changed, reminds to run `npm run test:unit`.
+
+### Hook 6: Dead-Code Ratchet (Stop hook) — **blocking**
+
+Before Claude ends a turn, runs [knip](https://knip.dev) and compares orphan count vs a committed baseline (`.dead-code-baseline.json`). If the count grew — new orphan exports, files, types, or unused deps — the Stop is **blocked** and Claude is forced to clean up before really finishing.
+
+**Why a Stop hook instead of a nightly cron?** The original idea was a nightly "slop-cleaner" that batch-cleans dead code. But the real fix is at the source: don't let dead code reach the end of a turn. Stop hooks catch regressions at the exact moment Claude says "done" — before the operator ever sees the result.
+
+**Philosophy:** same as the `any`-ratchet. The baseline is the floor. The count can only go down. When the total drops (intentional cleanup), regenerate the baseline.
+
+**What it catches:**
+- Orphan exports / types with no consumer
+- Files never imported by anything
+- `package.json` dependencies not actually used
+- Duplicates, unlisted deps, unresolved imports
+
+**Skip conditions (safe no-ops):**
+- No `.ts/.tsx/.js` changes in the working tree (nothing to check — saves ~5s per idle turn)
+- `SKIP_DEADCODE=1` env var (explicit bypass)
+- knip or baseline missing (hasn't been adopted yet)
+- knip times out or crashes (never block on tooling bugs)
+
+**Adoption (one-time setup for a new project):**
+
+```bash
+# 1. Install knip
+npm install -D knip
+
+# 2. Copy the two scripts from this repo into yours
+cp examples/scripts/check-dead-code-baseline.js <your-repo>/scripts/
+cp examples/scripts/stop-dead-code-guard.py    <your-repo>/scripts/
+
+# 3. Copy the knip config template — edit entry points to match your project
+cp examples/knip.example.json <your-repo>/knip.json
+
+# 4. Add npm scripts to package.json:
+#    "check:dead-code":    "node scripts/check-dead-code-baseline.js",
+#    "dead-code-baseline": "node scripts/check-dead-code-baseline.js --write",
+
+# 5. Freeze the initial baseline (commit .dead-code-baseline.json)
+npm run dead-code-baseline
+
+# 6. Add Stop hook to .claude/settings.json (see snippet below)
+```
+
+**Stop hook snippet for `.claude/settings.json`:**
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/stop-dead-code-guard.py",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Workflow when the ratchet blocks:**
+
+1. Claude sees stderr with the list of new orphans + file paths
+2. Either (a) delete the orphan, (b) wire it to a consumer, or (c) run `npm run dead-code-baseline` if OTHER files were cleaned up and the total dropped
+3. Claude is free to stop the turn
+
+**Why this beats a nightly cleaner:** it's the *exact moment* the code was introduced — no investigation needed, no "whose orphan is this", no batch noise a week later.
 
 ### Settings File Structure
 
