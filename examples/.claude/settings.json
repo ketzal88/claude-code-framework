@@ -1,21 +1,54 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/pre-push-quality-guard.py",
+            "timeout": 330,
+            "comment": "Mirrors CI checks before every push. Blocks on failure. Bypass: SKIP_PREPUSH=1 (docs-only changes only)."
+          },
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys,subprocess,os; d=json.load(sys.stdin); cmd=d.get('tool_input',{}).get('command','') or ''; root=os.environ.get('CLAUDE_PROJECT_DIR','.'); (sys.exit(subprocess.call(['bash', os.path.join(root,'scripts','check-no-secrets.sh')], cwd=root))) if cmd.lstrip().startswith('git commit') else None\"",
+            "comment": "MUST be PreToolUse — PostToolUse runs after the commit so git diff --cached is already empty."
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "python -c \"import json,sys; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path',''); print('Run /test before committing.', file=sys.stderr) if 'src/lib/engines/' in p else None\""
+            "command": "python -c \"import json,sys; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path','') or ''; msgs=[]; msgs.append('\\u2192 Engine changed. Run /test-alerts before committing.') if 'src/lib/engines/' in p and p.endswith('.ts') else None; msgs.append('\\u2192 Cron route changed. Verify validateCronSecret() + withErrorReporting().') if '/api/cron/' in p and p.endswith('route.ts') else None; msgs.append('\\u2192 DB indexes changed. Review and deploy carefully.') if 'firestore.indexes.json' in p else None; print('\\n'.join(m for m in msgs if m), file=sys.stderr) if any(msgs) else None\"",
+            "comment": "Context-aware reminders when touching high-risk files."
+          },
+          {
+            "type": "command",
+            "command": "python -c \"\nimport json,sys,subprocess\nd=json.load(sys.stdin)\np=(d.get('tool_input',{}).get('file_path','') or '')\nif p.endswith('.ts') or p.endswith('.tsx'):\n    subprocess.call(['node','scripts/check-no-new-any.js',p])\n\"",
+            "comment": "any-type ratchet: fails if the edited file gained new any annotations."
+          },
+          {
+            "type": "command",
+            "command": "python -c \"\nimport json,sys,re\nd=json.load(sys.stdin)\np=(d.get('tool_input',{}).get('file_path','') or '').replace('\\\\\\\\','/')\nif not p.endswith('.tsx'): sys.exit(0)\nif '/api/' in p: sys.exit(0)\ntry:\n    content=open(p,encoding='utf-8',errors='replace').read()\nexcept: sys.exit(0)\nhooks=re.compile(r'\\\\b(useState|useEffect|useRef|useCallback|useMemo|useContext|useReducer|useLayoutEffect)\\\\s*[(<]')\nhas_directive=re.compile(r'''['\\\"]use client['\\\"]''',re.MULTILINE)\nif hooks.search(content) and not has_directive.search(content):\n    print('\\u2192 AVISO: This component uses React hooks without \\\"use client\\\" — will fail Next.js build if imported from a Server Component.',file=sys.stderr)\n\"",
+            "comment": "Catches missing 'use client' before Vercel build failure."
           }
         ]
-      },
+      }
+    ],
+    "Stop": [
       {
-        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "python -c \"import json,sys,subprocess; d=json.load(sys.stdin); cmd=d.get('tool_input',{}).get('command',''); sys.exit(subprocess.call(['bash','scripts/check-no-secrets.sh'])) if cmd.startswith('git commit') else None\""
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/stop-dead-code-guard.py",
+            "timeout": 90,
+            "comment": "Blocks turn completion if orphaned exports/files grew vs baseline."
           }
         ]
       }
