@@ -39,9 +39,10 @@ See: `@.claude/rules/ci-zero-failure.md`
 
 ## Code Quality Ratchets
 
-Three quality floors that never go down:
+Four quality floors that never go down:
 - **`any` ratchet** — baseline per file, PostToolUse hook enforces
 - **Dead code ratchet** — knip baseline, Stop hook enforces
+- **Design-contract ratchet** — `.design-baseline.json`, Stop hook enforces (box-shadow / arbitrary border-radius / gradient-text in product `.tsx`)
 - **File size** — 800 line trigger, `/check-file-size` command
 
 See: `@.claude/rules/code-quality-ratchets.md`
@@ -74,6 +75,7 @@ npm run test:pre-push      # tsc + lint + tests + indexes parse
 
 ## Modular Rules
 
+@.claude/rules/operating-procedure.md
 @.claude/rules/pure-engine-pattern.md
 @.claude/rules/cron-security.md
 @.claude/rules/ci-zero-failure.md
@@ -112,5 +114,13 @@ npm run test:pre-push      # tsc + lint + tests + indexes parse
 
 - **PostToolUse Edit/Write on `.ts/.tsx`**: runs `any` count check — warns if count increased vs baseline.
 
-- **Stop hook**: runs `npm run check:dead-code` (knip ratchet) before Claude ends a turn.
+- **Stop hook (dead-code)**: runs `npm run check:dead-code` (knip ratchet) before Claude ends a turn.
   Blocks if orphan count grew vs `.dead-code-baseline.json`. Bypass: `SKIP_DEADCODE=1`.
+
+- **Stop hook (design-contract)**: runs `npm run check:design` before Claude ends a turn.
+  Blocks if visual-contract violations (box-shadow / arbitrary `rounded-[…]` / gradient-text) grew
+  in a product-register `.tsx` vs `.design-baseline.json`. Bypass: `SKIP_DESIGN=1`.
+
+- **PostToolUse Edit/Write on the cron schedule file**: runs `scripts/check-cron-doc-sync.js` —
+  advisory reminder if the cron endpoints in the workflow file drift from the CLAUDE.md cron table.
+  Silent when in sync. Also runs in CI so it covers manual edits, not just Claude-driven turns.

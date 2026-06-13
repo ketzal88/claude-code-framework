@@ -1,7 +1,7 @@
 # Claude Code Setup Guide — Worker Brain
 
 > How we configured Claude Code for a production Next.js 14 + Firebase + Vercel SaaS.
-> 12 slash commands, 7 diagnostic subagents, 6 AST rules, 6 automated hooks (incl. Stop hook dead-code ratchet), 14 development workflow skills.
+> 12 slash commands, 7 diagnostic subagents, 6 AST rules, 8 automated hooks (incl. two blocking Stop-hook ratchets — dead-code + design-contract), and an auto-routing operating procedure so the methodology runs without the operator invoking anything.
 > Zero TS errors policy, pure-computation engines, TDD discipline, and a commit-checkpoint workflow that blocks regressions.
 
 ---
@@ -41,6 +41,7 @@ Four principles drive this setup:
 ├── CLAUDE.md                          # Main brain — architecture, patterns, reference tables
 ├── settings.json                      # Hooks (auto-run on edit/commit/push)
 ├── rules/
+│   ├── operating-procedure.md         # Auto-router: Claude picks the sequence by task size + type
 │   ├── alert-engine-pattern.md        # Pure-computation contract for engines
 │   ├── cron-security.md               # Auth + error handling for crons
 │   └── firestore-conventions.md       # Doc IDs, batching, index rules
@@ -311,6 +312,26 @@ npm run dead-code-baseline
 
 **Why this beats a nightly cleaner:** it's the *exact moment* the code was introduced — no investigation needed, no "whose orphan is this", no batch noise a week later.
 
+### Hook 7: Design-Contract Ratchet (Stop hook) — **blocking**
+
+The second Stop-hook ratchet (same philosophy as dead-code, different floor). Before Claude ends a turn that touched a `.tsx`, `scripts/check-design-baseline.js` scans the product-register UI for **visual-contract violations** and blocks if the count grew vs `.design-baseline.json`.
+
+It enforces the three *deterministic* non-negotiables of a design system — for this project: no `box-shadow`, no arbitrary `rounded-[…]` radius, no gradient text. The key design choice is **high precision over recall**: a blocking gate must never false-positive, so it only flags unambiguous Tailwind utilities and leaves the judgment calls (e.g. "accent color ≤ 8% of the screen") to an on-demand visual audit. Brand/marketing surfaces are exempt by path.
+
+```bash
+cp examples/scripts/check-design-baseline.js <your-repo>/scripts/
+cp examples/scripts/stop-design-guard.py     <your-repo>/scripts/
+# package.json: "check:design": "node scripts/check-design-baseline.js",
+#               "design-baseline": "node scripts/check-design-baseline.js --write"
+npm run design-baseline   # freeze the floor (commit .design-baseline.json)
+```
+
+Adopting it: edit the regex rules in `check-design-baseline.js` to your own design contract, and the brand-exempt path list. Everything else (baseline diff, Stop hook, bypass via `SKIP_DESIGN=1`) is identical to the dead-code ratchet.
+
+### Hook 8: Cron Doc-Sync (PostToolUse) — advisory
+
+Documentation drifts silently. This gate keeps a reference table in `CLAUDE.md` honest against its source of truth. When the cron schedule file changes, `scripts/check-cron-doc-sync.js` diffs the `/api/cron/<name>` endpoints between the workflow file and the `CLAUDE.md` cron table, and surfaces a reminder **only on drift** (silent when in sync). It runs both as a PostToolUse hook (in Claude's sessions) **and in CI** — so it covers manual edits too, not just Claude-driven turns. Name-level only; schedules and descriptions stay human-reviewed.
+
 ### Settings File Structure
 
 ```json
@@ -339,6 +360,22 @@ npm run dead-code-baseline
 - Blocking hooks use non-zero exit codes
 - All hooks are Python one-liners that parse JSON stdin (the tool use event)
 - Never use hooks for complex logic — keep them under 5 lines
+
+---
+
+## Operating Procedure (Auto-Routing)
+
+The hardest problem with a setup this size isn't building the commands — it's that a non-technical operator will never *invoke* them. Twelve slash commands that nobody types are dead weight. The fix is to stop treating the methodology as buttons and encode it as a **router** that Claude reads every session and applies on its own.
+
+`@.claude/rules/operating-procedure.md` is that conductor. It does two things:
+
+**1. Triage by size first (the safety valve).** Without this, a "think → plan → build → review → ship" methodology turns every "what does this function do?" into a five-step ritual. The router opens with: *is this trivial? → answer directly, no ceremony.* The heavy sequence is reserved for substantial work. This single rule is the difference between a methodology that helps and one that gets in the way.
+
+**2. Route by work type.** For substantial work, a table maps *work type → ordered gates*: a UI change implies "implement → smoke-test → design ratchet"; a new engine implies "pure `evaluate()` + test in the same change"; a cron implies "auth + idempotency + keep the doc table in sync". Claude announces the chosen sequence in one line ("this is UI → I'll implement and smoke-test before closing") and follows it.
+
+The operator never picks a command. They watch the methodology happen and interrupt when they want. The slash commands still exist — they're just the *implementation* of each routed step, not something a human has to remember to press.
+
+> This is the layer that makes everything above it actually run. Rules document invariants, hooks enforce them automatically, commands encode workflows — and the operating procedure decides *which* of them to apply, scaled to the task, without waiting to be asked.
 
 ---
 
