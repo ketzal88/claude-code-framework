@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Write(.claude/)",
+      "Edit(.claude/)",
+      "Write(CLAUDE.md)",
+      "Edit(CLAUDE.md)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/pre-push-quality-guard.py",
+            "timeout": 330
+          },
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys,subprocess,os; d=json.load(sys.stdin); cmd=d.get('tool_input',{}).get('command','') or ''; root=os.environ.get('CLAUDE_PROJECT_DIR','.'); (sys.exit(subprocess.call(['bash', os.path.join(root,'scripts','check-no-secrets.sh')], cwd=root))) if cmd.lstrip().startswith('git commit') else None\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path','') or ''; msgs=[]; msgs.append('\\u2192 Alert engine changed. Run /test-alerts before committing.') if 'src/lib/alert-engines/' in p and p.endswith('.ts') else None; msgs.append('\\u2192 Cron route changed. Verify validateCronSecret() + withErrorReporting() (.claude/rules/cron-security.md).') if '/api/cron/' in p and p.endswith('route.ts') else None; msgs.append('\\u2192 Indexes changed. Use /deploy-indexes to diff before deploying.') if p.endswith('firestore.indexes.json') else None; msgs.append('\\u2192 Channel service changed. Consider running /audit-parity.') if p.endswith('-service.ts') and 'src/lib/' in p else None; print('\\n'.join(m for m in msgs if m), file=sys.stderr) if any(msgs) else None\""
+          },
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys,subprocess; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path','') or ''; (subprocess.call(['node','scripts/check-error-reporting.js',p])) if (('/src/app/api/' in p.replace('\\\\','/')) and (p.endswith('route.ts') or p.endswith('route.tsx'))) else None\""
+          },
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys,subprocess; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path','') or ''; (subprocess.call(['node','scripts/check-no-new-any.js',p])) if (p.endswith('.ts') or p.endswith('.tsx')) else None\""
+          },
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys,subprocess; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path','') or ''; r=(subprocess.run(['node','scripts/check-cron-doc-sync.js'],capture_output=True,text=True) if p.endswith('crons.yml') else None); (sys.stderr.write(r.stderr) if (r and r.returncode!=0) else None)\""
+          },
+          {
+            "type": "command",
+            "command": "python -c \"\nimport json,sys,re\nd=json.load(sys.stdin)\np=(d.get('tool_input',{}).get('file_path','') or '').replace('\\\\\\\\','/')\nif not p.endswith('.tsx'): sys.exit(0)\nif '/src/app/api/' in p: sys.exit(0)\ntry:\n    content=open(p,encoding='utf-8',errors='replace').read()\nexcept: sys.exit(0)\nhooks=re.compile(r'\\\\b(useState|useEffect|useRef|useCallback|useMemo|useContext|useReducer)\\\\s*[(<]')\nhas_directive=re.compile(r'''['\\\"]use client['\\\"]''',re.MULTILINE)\nif hooks.search(content) and not has_directive.search(content):\n    print('\\u2192 AVISO: Este componente usa hooks React sin \\\"use client\\\" — fallará el build de Vercel si lo importa un Server Component.',file=sys.stderr)\n\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import json,sys; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path','') or ''; crit=['objective-utils.ts','date-utils.ts','cron-auth.ts']; print('\\u2192 Critical utility changed. Run npm run test:unit to verify pure function tests.', file=sys.stderr) if any(c in p for c in crit) else None\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/stop-dead-code-guard.py",
+            "timeout": 90
+          },
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/stop-design-guard.py",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}

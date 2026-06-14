@@ -1,0 +1,22 @@
+id: cron-requires-auth
+language: TypeScript
+severity: error
+message: |
+  Cron route is missing validateCronSecret() call. Every /api/cron/** endpoint
+  is publicly routable on Vercel and MUST authenticate. Add as the first line
+  of your handler:
+      const auth = await validateCronSecret(req);
+      if (!auth.valid) return auth.response;
+  See .claude/rules/cron-security.md
+rule:
+  any:
+    - pattern: export async function GET($$$) { $$$BODY }
+    - pattern: export async function POST($$$) { $$$BODY }
+    - pattern: export const GET = $EXPR
+    - pattern: export const POST = $EXPR
+  not:
+    has:
+      stopBy: end
+      pattern: validateCronSecret($$$)
+files:
+  - "src/app/api/cron/**/route.ts"

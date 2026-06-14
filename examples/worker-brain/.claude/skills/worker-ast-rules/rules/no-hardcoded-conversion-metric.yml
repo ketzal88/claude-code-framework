@@ -1,0 +1,29 @@
+id: no-hardcoded-conversion-metric
+language: TypeScript
+severity: warning
+message: |
+  Direct access to a hardcoded conversion metric. The codebase is objective-aware —
+  `metrics.purchases` / `metrics.leads` / `metrics.conversions` break for clients
+  whose objective is messaging/traffic/awareness/etc. Use:
+      import { getPrimaryMetric, resolveObjective } from '@/lib/objective-utils';
+      const primary = getPrimaryMetric(objective, metrics);
+  Supported objectives: sales, leads, messaging, scheduling, traffic, awareness,
+  app_installs, video_views. See .claude/rules/alert-engine-pattern.md
+rule:
+  any:
+    - pattern: $OBJ.metrics.purchases
+    - pattern: $OBJ.metrics.leads
+    - pattern: metrics.purchases
+    - pattern: metrics.leads
+  not:
+    inside:
+      stopBy: end
+      any:
+        - kind: type_alias_declaration
+        - kind: interface_declaration
+        - kind: property_signature
+files:
+  - "src/lib/alert-engines/**"
+  - "src/lib/alert-engine.ts"
+  - "src/lib/classification/**"
+  - "src/lib/reporting/**"

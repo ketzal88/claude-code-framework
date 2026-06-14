@@ -1,0 +1,34 @@
+{
+  "language": "typescript",
+  "packageManager": "npm",
+  "commands": {
+    "typecheck": "npx tsc --noEmit",
+    "lint": "npm run lint",
+    "test": "npm run test:unit",
+    "testAlerts": "npm run test:alerts",
+    "design": "npm run check:design",
+    "cronDoc": "npm run check:cron-doc",
+    "build": "npm run build"
+  },
+  "security": {
+    "secretScan": "bash scripts/check-no-secrets.sh",
+    "sast": "",
+    "depAudit": ""
+  },
+  "ratchets": {
+    "deadCode": "npm run check:dead-code",
+    "structural": "sentrux gate",
+    "baselineDir": ".sentrux/"
+  },
+  "gates": {
+    "preCommit": { "secretScan": "blocking" },
+    "prePush": {
+      "blocking": true,
+      "steps": ["typecheck", "lint", "testAlerts", "test", "design", "cronDoc", "structural"]
+    }
+  },
+  "paths": {
+    "source": ["src/**"],
+    "codeExtensions": [".ts", ".tsx"]
+  }
+}

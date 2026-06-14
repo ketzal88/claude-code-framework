@@ -1,0 +1,22 @@
+id: no-console-error-swallow
+language: TypeScript
+severity: warning
+message: |
+  catch block uses console.error without calling reportError(). Errors in crons
+  and services must route through reportError() / withErrorReporting() so they
+  land in the `system_events` collection and surface in /admin/system.
+  See .claude/rules/cron-security.md
+rule:
+  kind: catch_clause
+  has:
+    stopBy: end
+    pattern: console.error($$$)
+  not:
+    has:
+      stopBy: end
+      any:
+        - pattern: reportError($$$)
+        - pattern: withErrorReporting($$$)
+files:
+  - "src/app/api/cron/**"
+  - "src/lib/**"
