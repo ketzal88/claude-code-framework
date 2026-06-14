@@ -68,7 +68,7 @@ SENTRUX_BASELINE = os.path.join(".sentrux", "baseline.json")
 CLIENT_HOOKS_PATTERN = re.compile(
     r"\b(useState|useEffect|useRef|useCallback|useMemo|useContext|useReducer|useLayoutEffect)\s*[(<]"
 )
-USE_CLIENT_PATTERN = re.compile(r"""^['"]use client['"]""", re.MULTILINE)
+USE_CLIENT_PATTERN = re.compile(r"""^['\"](use client)['\"]""")
 
 
 def tail(text, n):

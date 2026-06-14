@@ -1,115 +1,197 @@
-# Adoption Guide
+# Adopting the Claude Code Framework
 
-Get the framework running in any repo in ~10 minutes. No language assumptions.
-
-## 1. Copy the core
-
-Copy the universal `core/` into your repo. Two common layouts:
-
-```bash
-# Option A — keep it namespaced
-cp -r core .claude-framework
-
-# Option B — merge into your existing .claude/
-cp -r core/rules    .claude/rules-framework
-cp -r core/commands .claude/commands
-cp -r core/hooks/scripts scripts/framework
-```
-
-Nothing in `core/` references a specific language — it all reads `stack.json` at runtime.
-
-## 2. Write your `stack.json`
-
-Copy the template and fill in the commands your project actually uses:
-
-```bash
-cp stack.example.json stack.json
-```
-
-Minimum useful manifest (a Python project):
-
-```json
-{
-  "language": "python",
-  "packageManager": "pip",
-  "commands": {
-    "typecheck": "mypy .",
-    "lint": "ruff check",
-    "test": "pytest -q"
-  },
-  "security": {
-    "secretScan": "core/hooks/scripts/secret-scan.sh",
-    "sast": "bandit -r .",
-    "depAudit": "pip-audit"
-  },
-  "gates": {
-    "preCommit": { "secretScan": "blocking" },
-    "prePush": { "blocking": true, "steps": ["typecheck", "lint", "test", "sast"] }
-  },
-  "paths": { "source": ["src/**"], "codeExtensions": [".py"] }
-}
-```
-
-**Rules of the manifest:**
-- Every key is optional. An absent key → that gate is skipped silently (never an error).
-- `gates.prePush.steps` are resolved in order from `commands.<step>` first, then `ratchets.<step>`.
-- Validate against [`../stack.schema.json`](../stack.schema.json) if your editor supports JSON Schema.
-
-Sanity-check a key:
-
-```bash
-python core/hooks/scripts/read-config.py commands.test
-# -> pytest -q   (exit 0)     |   empty + exit 1 if the key is absent
-```
-
-## 3. Wire the hooks
-
-Merge `core/hooks/settings.template.json` into your `.claude/settings.json`. The important ones:
-
-| Hook | Event | Effect |
-|---|---|---|
-| secret-scan | `PreToolUse` on `git commit` | **Blocks** the commit if a secret is staged |
-| pre-push gate | `PreToolUse` on `git push` | **Blocks** the push if any `gates.prePush.steps` fails |
-| ratchet guard | `Stop` | **Blocks** turn end if a ratchet regressed vs its baseline |
-
-> The secret-scan **must** be `PreToolUse`: after a commit completes, `git diff --cached` is empty,
-> so a `PostToolUse` hook would never catch anything.
-
-## 4. (Optional) Adopt the ratchets
-
-Ratchets enforce "the baseline is the floor." To turn one on:
-
-```bash
-# 1. install the detector for your language (e.g. knip for JS, vulture for Python)
-# 2. declare it in stack.json -> ratchets.deadCode
-# 3. freeze the initial baseline (commit it)
-#    the ratchet blocks any regression above the frozen count
-```
-
-The **structural ratchet** (`ratchets.structural`, e.g. `sentrux gate`) is opt-in: it runs only when
-both the binary (via `SENTRUX_BIN`) and a baseline in `ratchets.baselineDir` exist. Until then it
-skips silently — safe to leave configured even if you haven't installed the tool yet.
-
-## 5. (Optional) Bring your own structural rules
-
-Language-specific structural rules (e.g. `ast-grep` for TS, custom linters) are **not** part of the
-agnostic core — they're a bring-your-own add-on. See
-[`../examples/worker-brain/.claude/skills/worker-ast-rules/`](../examples/worker-brain/.claude/skills/worker-ast-rules/)
-for a worked TypeScript example you can adapt.
+This guide walks you through wiring the framework into any project — TypeScript, Python, Go,
+Java, or any other language. **Time:** ~30 minutes for the core gates.
+Domain-specific rules and commands are additive and can come later.
 
 ---
 
-## Verify it works
+## Step 1: Copy the core
 
 ```bash
-# core/ must contain zero hardcoded language tool names:
-grep -rIE 'tsc|knip|eslint|firestore' core/ && echo "LEAK" || echo "clean"
-
-# read-config resolves your manifest:
-python core/hooks/scripts/read-config.py gates.prePush.steps
+cp -r core/ your-project/.claude/core/
 ```
 
-Then make a trivial commit with a fake secret staged — the pre-commit gate should block it.
+`core/` is entirely language-agnostic. No edits needed.
+It contains:
+- `CLAUDE.template.md` — brain template with `{{placeholders}}`
+- `rules/` — 4 universal rules
+- `commands/` — 4 universal slash commands
+- `hooks/` — hook scripts and settings template
+- `security/` — secret patterns and SAST adapter docs
 
-For a complete, real-world reference (every manifest key mapped to a live gate), read
-[`../examples/worker-brain/`](../examples/worker-brain/).
+---
+
+## Step 2: Write your stack.json
+
+Create `stack.json` at the **project root** (not inside `.claude/`). Start minimal:
+
+**Minimal — secret scan + one check:**
+```json
+{
+  "language": "python",
+  "commands": {
+    "typecheck": "mypy ."
+  },
+  "security": {
+    "secretScan": ".claude/core/hooks/scripts/secret-scan.sh"
+  },
+  "gates": {
+    "preCommit": { "secretScan": "blocking" }
+  }
+}
+```
+
+**Full TypeScript example** → `examples/worker-brain/stack.json`
+
+Key rule: **absent key = gate silently skipped**. Never required to fill all keys.
+Adopt incrementally — each gate you add is independent.
+
+---
+
+## Step 3: Wire settings.json
+
+```bash
+cp .claude/core/hooks/settings.template.json .claude/settings.json
+```
+
+The template pre-wires:
+- `PreToolUse` (Bash `git push`): `pre-push-guard.py` — **blocking**
+- `PreToolUse` (Bash `git commit`): `secret-scan.sh` — **blocking**
+- `Stop`: `ratchet-guard.py` (dead-code ratchet) — **blocking**
+
+Both `PreToolUse` hooks run **before** the tool action completes, so they can
+actually block. The secret scan must be `PreToolUse` — `PostToolUse` fires after
+the commit is done and `git diff --cached` is already empty.
+
+Adjust script paths if your scripts live somewhere other than `.claude/core/hooks/scripts/`.
+
+---
+
+## Step 4: Create your CLAUDE.md
+
+```bash
+cp .claude/core/CLAUDE.template.md .claude/CLAUDE.md
+```
+
+Fill the `{{placeholders}}`:
+- `{{PROJECT_NAME}}`, `{{LANGUAGE}}`, `{{FRAMEWORK}}`
+- `{{TEST_COMMAND}}`, `{{LINT_COMMAND}}`, `{{BUILD_COMMAND}}`
+- Architecture section: key patterns, file structure, important invariants
+
+The `@.claude/core/rules/` import syntax works immediately — no build step. Example:
+```markdown
+@.claude/core/rules/ratchet-philosophy.md
+@.claude/core/rules/security-gates.md
+```
+
+---
+
+## Step 5: Freeze baselines (one-time)
+
+Each ratchet requires an initial baseline commit. The baseline is the floor:
+once committed, the metric can only decrease.
+
+**Dead-code ratchet** (if using `ratchets.deadCode`):
+```bash
+# TypeScript (knip)
+npx knip
+node scripts/check-dead-code-baseline.js --write
+git add .dead-code-baseline.json && git commit -m "chore: freeze dead-code baseline"
+
+# Python (vulture)
+vulture src/ --min-confidence 80 > .vulture-baseline.txt
+git add .vulture-baseline.txt && git commit -m "chore: freeze dead-code baseline"
+```
+
+**Structural ratchet / sentrux** (if using `ratchets.structural`):
+```bash
+export SENTRUX_BIN=/path/to/sentrux
+sentrux baseline .  # creates .sentrux/baseline.json
+git add .sentrux/ && git commit -m "chore: freeze sentrux baseline"
+```
+
+---
+
+## Step 6: Add domain rules
+
+Domain rules go in `.claude/rules/` (your project, not in `core/`). Each rule captures
+an invariant specific to your codebase.
+
+**When to create a rule:**
+- You corrected Claude for the same thing twice
+- There's an architectural invariant that must always hold
+- The rule is not obvious from the code itself
+
+See `examples/worker-brain/rules/` for 9 production domain rules across:
+alert engine contracts, cron security, database conventions, error patterns, regional thresholds.
+
+---
+
+## Step 7: Add domain commands
+
+Domain commands go in `.claude/commands/`. Each encodes a multi-step workflow.
+
+**When to create a command:**
+- You run the same 3+ commands in sequence repeatedly
+- There's a workflow with built-in safety checks
+- The workflow involves multiple files, services, or confirmation steps
+
+See `examples/worker-brain/commands/` for 15 production slash commands:
+from alert scaffolding to Firestore index deploy to AI prompt versioning.
+
+---
+
+## Verification
+
+```bash
+# Verify core has no hardcoded tool names
+grep -rIE 'tsc|knip|eslint|firestore' .claude/core/
+# Must return empty
+
+# Verify read-config works
+python .claude/core/hooks/scripts/read-config.py commands.typecheck
+# Should print your typecheck command
+
+# Verify pre-push guard reads the manifest
+python .claude/core/hooks/scripts/pre-push-guard.py <<'EOF'
+{"tool_input": {"command": "git push origin main"}, "session_id": "test"}
+EOF
+# Should list the steps it would run
+```
+
+---
+
+## Reference: Worker Brain
+
+`examples/worker-brain/` is the full, faithful reference for a TypeScript/Next.js 14/Firebase/Vercel
+production SaaS. Use it to understand what a fully-adopted setup looks like:
+
+- A complete `stack.json` with all gates wired (8 commands, design + cron-doc gates, sentrux)
+- 9 domain rules across alert engines, cron security, Firestore conventions, currency thresholds
+- 15 slash commands from scaffolding to backfill to AI prompt versioning
+- 10 hooks: 2 blocking `PreToolUse`, 6 advisory `PostToolUse`, 2 blocking `Stop`
+- 4 production scripts and TypeScript ast-grep rules as an optional add-on
+
+---
+
+## Troubleshooting
+
+**`read-config.py` exits 1 for every key**
+→ `stack.json` is not in the project root or any ancestor directory (searched up to 10 levels).
+
+**Pre-push guard runs even for docs-only changes**
+→ Set `SKIP_PREPUSH=1`. Allowed only when all changed files are `.md`, `.claude/**`, `docs/**`,
+`.gitignore`. The guard enforces this and rejects the bypass for code changes.
+
+**Ratchet-guard blocks every turn**
+→ A dead-code ratchet regressed. Either delete the orphan export, wire it to a consumer,
+or run `--write` to lower the baseline if you genuinely cleaned up other files.
+
+**sentrux gate blocks on a clean push**
+→ A structural metric regressed vs `.sentrux/baseline.json`. Run `sentrux diff .` to diagnose,
+fix the regression, then re-push. If sentrux isn’t installed, remove it from `gates.prePush.steps`.
+
+**Secret scan false-positives**
+→ Edit `core/security/secret-patterns.txt` to narrow the pattern, or add a file exemption
+to `check-no-secrets.sh`. Patterns are tuned to avoid `TODO|PLACEHOLDER` values.

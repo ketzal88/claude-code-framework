@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pre-commit secret scanner for Worker Brain.
 # Exits non-zero if staged files contain likely secrets.
-# Usage: called from .claude/settings.json PostToolUse hook on `git commit`.
+# Usage: called from .claude/settings.json PreToolUse hook on `git commit`.
 
 set -e
 
@@ -17,7 +17,7 @@ PATTERNS=(
   "BEGIN PRIVATE KEY"
   "BEGIN RSA PRIVATE KEY"
   # Generic API key patterns (long hex/b64 values assigned to suspicious var names)
-  "(api[_-]?key|access[_-]?token|client[_-]?secret|refresh[_-]?token|private[_-]?key)[[:space:]]*[:=][[:space:]]*['\"][A-Za-z0-9_\\-]{32,}['\"]"
+  "(api[_-]?key|access[_-]?token|client[_-]?secret|refresh[_-]?token|private[_-]?key)[[:space:]]*[:=][[:space:]]*['\"][A-Za-z0-9_\\-]{32,}['\"]" 
   # AWS
   "AKIA[0-9A-Z]{16}"
   # Google OAuth
