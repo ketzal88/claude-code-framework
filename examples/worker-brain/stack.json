@@ -1,0 +1,44 @@
+{
+  "language": "typescript",
+  "packageManager": "npm",
+  "commands": {
+    "typecheck": "npx tsc --noEmit",
+    "lint": "npm run lint",
+    "test": "npm run test:unit",
+    "testAlerts": "npm run test:alerts",
+    "build": "npm run build",
+    "indexesParse": "python -c \"import json; json.load(open('firestore.indexes.json'))\"",
+    "checkDesign": "npm run check:design",
+    "checkCronDoc": "npm run check:cron-doc"
+  },
+  "security": {
+    "secretScan": "scripts/check-no-secrets.sh",
+    "sast": "",
+    "depAudit": ""
+  },
+  "ratchets": {
+    "deadCode": "node scripts/check-dead-code-baseline.js",
+    "structural": "sentrux gate",
+    "baselineDir": ".sentrux/"
+  },
+  "gates": {
+    "preCommit": { "secretScan": "blocking" },
+    "prePush": {
+      "blocking": true,
+      "steps": [
+        "typecheck",
+        "lint",
+        "testAlerts",
+        "test",
+        "indexesParse",
+        "checkDesign",
+        "checkCronDoc",
+        "structural"
+      ]
+    }
+  },
+  "paths": {
+    "source": ["src/**"],
+    "codeExtensions": [".ts", ".tsx"]
+  }
+}
