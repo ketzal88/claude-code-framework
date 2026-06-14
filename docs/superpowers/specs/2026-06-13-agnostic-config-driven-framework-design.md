@@ -76,20 +76,23 @@ Validated by `stack.schema.json`. Every key is optional; an **absent key means t
   },
   "security": {
     "secretScan": "core/security/secret-scan.sh",   // agnostic default, ships in core
-    "sast":       "sentrux scan",                     // py: "bandit -r ." · multi: "semgrep --config auto"
+    "sast":       "",                                 // OPTIONAL one-shot SAST: "semgrep --config auto" · py: "bandit -r ." · go: "gosec ./..."
     "depAudit":   "npm audit --audit-level=high"      // py: "pip-audit" · go: "govulncheck ./..."
   },
-  "ratchets": {
+  "ratchets": {                                        // baseline-is-the-floor gates; each skips silently if its baseline/binary is absent
     "deadCode":   "knip",                             // optional; py: "vulture", etc.
-    "baselineDir": ".baselines/"
+    "structural": "sentrux gate",                     // opt-in structural-regression ratchet vs baselineDir/baseline.json (binary via SENTRUX_BIN)
+    "baselineDir": ".sentrux/"
   },
   "gates": {
     "preCommit": { "secretScan": "blocking" },
-    "prePush":   { "blocking": true, "steps": ["typecheck", "lint", "test", "sast"] }
+    "prePush":   { "blocking": true, "steps": ["typecheck", "lint", "test", "structural"] }
   },
   "paths": { "source": ["src/**"], "codeExtensions": [".ts", ".tsx"] }
 }
 ```
+
+> `stack.json` is **plain JSON** — the `//` comments above are illustrative only and must not appear in a real manifest (the schema validator rejects them). `stack.example.json` ships the same fields with documentation in a sibling `.md`, not inline.
 
 ### 3.2 Repo layout (target)
 
@@ -128,6 +131,8 @@ claude-code-framework/
    └─ adoption.md            # copy core/, write your stack.json, done
 ```
 
+**`CLAUDE.template.md` placeholders** are filled **manually at copy-time**, not by a renderer. The template ships with a short `<!-- fill me: ... -->` block at the top (stack name, primary patterns, test command) that the adopter edits by hand once. No build step, no template engine — keeping with the "copy core + write manifest" promise. (Only the hook/command *scripts* read the manifest at runtime via `read-config`; the brain doc is a one-time manual fill.)
+
 ---
 
 ## 4. Security Layer (first-class)
@@ -137,13 +142,15 @@ A named layer rather than scattered hooks. Directly answers the user's question 
 | Gate | Implementation | Agnostic? | Blocking? |
 |---|---|---|---|
 | **secret-scan** | `core/security/secret-scan.sh` + `secret-patterns.txt` | ✅ Total (regex over text) | ✅ pre-commit |
-| **pre-push gate** | `pre-push-guard.py` reads `gates.prePush.steps`, runs each `commands[step]` | ✅ Skeleton universal; commands from manifest | ✅ (README bug fixed) |
-| **SAST** | `sast-scan.sh` runs `security.sast` | ✅ Gate universal; tool is the adapter | configurable |
+| **pre-push gate** | `pre-push-guard.py` reads `gates.prePush.steps`, runs each step (a `commands[*]` or a `ratchets[*]`) | ✅ Skeleton universal; steps from manifest | ✅ (README bug fixed) |
+| **structural ratchet (sentrux)** | a pre-push step: runs `ratchets.structural` (`sentrux gate`) vs `ratchets.baselineDir`, **skips silently if binary/baseline absent** | ✅ Gate universal; tool+baseline are the adapter | ✅ as a pre-push step |
+| **SAST (optional, one-shot)** | `sast-scan.sh` runs `security.sast` when set | ✅ Gate universal; tool is the adapter | configurable |
 | **dep-audit** | runs `security.depAudit` | ✅ universal; per-language command | configurable |
 
-- `sentrux` becomes the **recommended SAST adapter** in the worker-brain example (wired through `security.sast`), with `semgrep` / `bandit` / `gosec` documented as alternatives in `core/security/README.md`.
+- **sentrux is a structural-regression ratchet, not a one-shot SAST.** In the real Worker Brain setup it runs as the 7th step *inside* `pre-push-quality-guard.py` — `sentrux gate <root>` diffed against `.sentrux/baseline.json`, opt-in via `SENTRUX_BIN` (default `C:\tmp\sentrux\sentrux.exe`), skipping silently when the binary or baseline is missing. It therefore belongs to the **ratchet family** (same "baseline is the floor / skip if unconfigured" semantics as dead-code/design/any), modeled as `ratchets.structural` and listed as a `gates.prePush.steps` entry. It is **not** wired through `security.sast`.
+- The generic `security.sast` slot stays empty by default and exists for projects that want a separate one-shot scanner — `semgrep` / `bandit` / `gosec` documented as options in `core/security/README.md`.
 - The agnostic `secret-scan.sh` is the existing `check-no-secrets.sh` generalized (filename checks + staged-diff pattern checks).
-- The blocking pre-push guard generalizes `pre-push-quality-guard.py`: instead of hardcoding the 6 CI steps, it iterates `gates.prePush.steps` and runs the manifest command for each. Bypass `SKIP_PREPUSH=1` preserved.
+- The blocking pre-push guard generalizes `pre-push-quality-guard.py`: instead of hardcoding the CI steps, it iterates `gates.prePush.steps` and runs the corresponding manifest command/ratchet for each. Bypass `SKIP_PREPUSH=1` preserved.
 
 ---
 
@@ -166,8 +173,8 @@ Before/while extracting the agnostic core, reconcile the framework with the **ac
 - Bring `examples/worker-brain/rules/` to the real, current rule set (not the stale generalized names).
 - Bring `examples/worker-brain/commands/` to the real ~16 commands.
 - Reflect the real hooks (blocking secret-scan, blocking pre-push mirroring CI, dead-code + design Stop ratchets, doc-sync, use-client check, any-ratchet, error-reporting check).
-- Record `sentrux` as the real SAST tool in the example manifest.
-- Fix every doc statement that misrepresents reality (advisory vs blocking, hook count, command count).
+- Model `sentrux` correctly in the example manifest: a `ratchets.structural` entry run as a pre-push step (`sentrux gate` vs `.sentrux/baseline.json`), opt-in via `SENTRUX_BIN`, skipping silently when unconfigured — **not** a `security.sast` scan.
+- Fix every doc statement that misrepresents reality. Known bugs to correct (audit the whole README hook section, do not stop at these): (a) pre-push gate described as "advisory" when it is **blocking** (`PreToolUse`, exit 2); (b) secret-scan described as `PostToolUse` when it is **`PreToolUse`** (PostToolUse can never catch staged secrets — `git diff --cached` is already empty); (c) stale hook count and command count.
 
 `examples/worker-brain/` is the regression test for fidelity: if it diverges from the real `.claude/`, the framework is lying.
 
