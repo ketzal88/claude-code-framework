@@ -1,0 +1,31 @@
+{
+  "language": "typescript",
+  "packageManager": "npm",
+  "commands": {
+    "typecheck": "YOUR_TYPECHECK_CMD",
+    "lint": "YOUR_LINT_CMD",
+    "test": "YOUR_TEST_CMD",
+    "build": "YOUR_BUILD_CMD"
+  },
+  "security": {
+    "secretScan": "core/hooks/scripts/secret-scan.sh",
+    "sast": "",
+    "depAudit": ""
+  },
+  "ratchets": {
+    "deadCode": "",
+    "structural": "",
+    "baselineDir": ".sentrux/"
+  },
+  "gates": {
+    "preCommit": { "secretScan": "blocking" },
+    "prePush": {
+      "blocking": true,
+      "steps": ["typecheck", "lint", "test"]
+    }
+  },
+  "paths": {
+    "source": ["src/**"],
+    "codeExtensions": [".ts", ".tsx"]
+  }
+}
