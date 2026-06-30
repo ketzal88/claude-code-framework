@@ -10,7 +10,15 @@
   "security": {
     "secretScan": "core/hooks/scripts/secret-scan.sh",
     "sast": "",
-    "depAudit": ""
+    "depAudit": "",
+    "review": {
+      "apiDir": "src/app/api",
+      "tenantParam": "clientId|tenantId|orgId",
+      "authSignals": "getUser|requireAuth|getServerSession|verifySessionCookie|session|createHmac|timingSafeEqual",
+      "cronCheck": "CRON_SECRET",
+      "publicEnvPrefix": "NEXT_PUBLIC_",
+      "publicEnvAllow": "FIREBASE"
+    }
   },
   "ratchets": {
     "deadCode": "",
