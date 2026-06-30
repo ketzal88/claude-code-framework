@@ -146,6 +146,7 @@ Four gates, driven entirely by `stack.json`. None are hardcoded — all adapt vi
 | **Pre-push quality gate** | `PreToolUse` (Bash `git push`) | ✅ Yes — blocks the push | `gates.prePush.steps` |
 | **Structural ratchet (sentrux)** | Pre-push step | ✅ Yes — as a step | `ratchets.structural` |
 | **SAST / dep-audit** | Configurable | Configurable | `security.sast` / `security.depAudit` |
+| **Security review (guided)** | On-demand (`/security-review`) | No — human/AI review | `security.review` |
 
 ### Secret Scan — PreToolUse (not PostToolUse)
 

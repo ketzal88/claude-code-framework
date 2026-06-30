@@ -13,7 +13,15 @@
   "security": {
     "secretScan": "bash scripts/check-no-secrets.sh",
     "sast": "",
-    "depAudit": ""
+    "depAudit": "",
+    "review": {
+      "apiDir": "src/app/api",
+      "tenantParam": "clientId",
+      "authSignals": "requireClientAccess|getAuthenticatedUser|requirePortalSession|requireActivePortalClient|validateCronSecret|isAllowedMcpEmail|verifySessionCookie|cookies\\.get|createHmac|timingSafeEqual|signed_request",
+      "cronCheck": "validateCronSecret",
+      "publicEnvPrefix": "NEXT_PUBLIC_",
+      "publicEnvAllow": "FIREBASE"
+    }
   },
   "ratchets": {
     "deadCode": "npm run check:dead-code",

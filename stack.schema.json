@@ -40,6 +40,19 @@
         "depAudit": {
           "type": "string",
           "description": "Dependency audit command. Empty = skip."
+        },
+        "review": {
+          "type": "object",
+          "description": "Config for the guided security-review triage (core/hooks/scripts/security-triage.sh). All keys optional; an absent key skips that check.",
+          "properties": {
+            "apiDir":          { "type": "string", "description": "Directory holding route handlers (default: src/app/api or app/api)." },
+            "tenantParam":     { "type": "string", "description": "Regex of tenant-id param names used in routes (e.g. clientId|tenantId|orgId)." },
+            "authSignals":     { "type": "string", "description": "Regex of tokens that prove a route does auth (your guard fns + session/token/hmac)." },
+            "cronCheck":       { "type": "string", "description": "Regex proving a cron route checks its secret (e.g. validateCronSecret|CRON_SECRET)." },
+            "publicEnvPrefix": { "type": "string", "description": "Env-var prefix a build inlines into the client bundle (NEXT_PUBLIC_ for Next.js, VITE_ for Vite, PUBLIC_ for SvelteKit/Astro). Set to enable the client-bundle secret scan." },
+            "publicEnvAllow":  { "type": "string", "description": "Optional regex of known-public env names to exclude (e.g. FIREBASE — Firebase web config is public by design)." }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
