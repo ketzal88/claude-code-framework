@@ -1,851 +1,346 @@
-# Claude Code Setup Guide — Worker Brain
+# Claude Code Framework — Language-Agnostic, Config-Driven
 
-> How we configured Claude Code for a production Next.js 14 + Firebase + Vercel SaaS.
-> 12 slash commands, 7 diagnostic subagents, 6 AST rules, 8 automated hooks (incl. two blocking Stop-hook ratchets — dead-code + design-contract), and an auto-routing operating procedure so the methodology runs without the operator invoking anything.
-> Zero TS errors policy, pure-computation engines, TDD discipline, and a commit-checkpoint workflow that blocks regressions.
+A layered enforcement system for Claude Code that works with **any language or framework**.
+Three layers: a universal `core/` that reads a per-project `stack.json` manifest, a reference
+example for TypeScript/Next.js/Firebase ([Worker Brain](examples/worker-brain/)), and a security
+layer (secret-scan, blocking pre-push gate, SAST, dep-audit) driven entirely by the manifest.
 
 ---
 
 ## Table of Contents
 
 1. [Philosophy](#philosophy)
-2. [Directory Structure](#directory-structure)
-3. [CLAUDE.md — The Brain](#claudemd--the-brain)
-4. [Rules (`.claude/rules/`)](#rules)
-5. [Slash Commands (`.claude/commands/`)](#slash-commands)
-6. [Hooks (`.claude/settings.json`)](#hooks)
-7. [Subagents](#subagents)
-8. [Skills](#skills)
-9. [AST Rules (Static Analysis)](#ast-rules)
-10. [How It All Connects](#how-it-all-connects)
-11. [Plugins & Development Workflow Skills](#plugins--development-workflow-skills)
-12. [Adapting This for Your Project](#adapting-this-for-your-project)
+2. [Architecture](#architecture)
+3. [stack.json — The Manifest](#stackjson--the-manifest)
+4. [Security Layer](#security-layer)
+5. [Core Layer](#core-layer)
+6. [Worker Brain Reference Example](#worker-brain-reference-example)
+7. [Adopting This Framework](#adopting-this-framework)
 
 ---
 
 ## Philosophy
 
-Four principles drive this setup:
+Four principles:
 
-1. **Teach, don't repeat.** Rules go in files, not in your head. Every time you correct Claude, turn the correction into a rule so it never happens again.
-2. **Automate the guardrails.** Hooks run automatically on every edit/commit/push — Claude can't forget to check.
-3. **Pure functions are testable functions.** Any business logic engine must be pure computation (no DB access, no `new Date()`) — receives all data via input, returns results.
-4. **Commands encode workflows.** Multi-step processes (safe commit, new alert scaffolding, index deploy) become one-line slash commands.
+1. **Config-driven, not code-forked.** A Java project and a Python project use the same hooks, commands, and gates — only `stack.json` differs. No per-language copies, no conditional logic in `core/`.
+2. **Absent key = safe skip.** Every gate reads its command from the manifest. Missing key → silent no-op. Adoption is additive: start with nothing, grow the manifest as you wire each gate.
+3. **The baseline is the floor.** Quality ratchets (dead-code, structural, any-type, design) enforce that metrics never grow. The baseline can go down; it never goes up.
+4. **Commands encode workflows.** Multi-step processes become slash commands so the methodology runs without the operator invoking anything manually.
 
 ---
 
-## Directory Structure
+## Architecture
 
 ```
-.claude/
-├── CLAUDE.md                          # Main brain — architecture, patterns, reference tables
-├── settings.json                      # Hooks (auto-run on edit/commit/push)
-├── rules/
-│   ├── operating-procedure.md         # Auto-router: Claude picks the sequence by task size + type
-│   ├── alert-engine-pattern.md        # Pure-computation contract for engines
-│   ├── cron-security.md               # Auth + error handling for crons
-│   └── firestore-conventions.md       # Doc IDs, batching, index rules
-├── commands/
-│   ├── ts-check.md                    # /ts-check — TypeScript verification
-│   ├── test-alerts.md                 # /test-alerts — alert engine unit tests
-│   ├── commit-checkpoint.md           # /commit-checkpoint — safe commit workflow
-│   ├── new-alert.md                   # /new-alert — scaffold new alert type
-│   ├── new-channel-sync.md            # /new-channel-sync — scaffold new integration
-│   ├── env-check.md                   # /env-check — validate env vars
-│   ├── deploy-indexes.md              # /deploy-indexes — safe Firestore index deploy
-│   ├── audit-parity.md               # /audit-parity — data drift detection
-│   ├── client-health.md              # /client-health — per-client health snapshot
-│   ├── slack-preview.md              # /slack-preview — digest dry-run
-│   ├── backfill-client.md            # /backfill-client — data backfill with safety
-│   └── prompt-version.md            # /prompt-version — AI prompt versioning
-└── skills/
-    └── worker-ast-rules/              # AST-based static analysis rules
-        ├── SKILL.md
-        ├── sgconfig.yml
-        ├── scan.sh
-        └── rules/
-            ├── no-firestore-in-evaluate.yml
-            ├── cron-requires-auth.yml
-            ├── cron-must-declare-maxDuration.yml
-            ├── no-hardcoded-conversion-metric.yml
-            ├── no-console-error-swallow.yml
-            └── no-null-as-delete-sentinel.yml
+Universal gate  ──reads──►  stack.json  ──runs──►  the command for THIS project
+(secret-scan,               (declares test,        (tsc / mvn test / pytest / go test)
+ pre-push, ratchets)         lint, sast, ratchets…)
+```
+
+| Layer | Path | What it contains |
+|---|---|---|
+| **Core** | `core/` | Language-agnostic rules, command templates, hook scripts, security layer. Zero hardcoded tool names. |
+| **Manifest** | `stack.json` | Per-project configuration. The only file an adopter must write. |
+| **Reference** | `examples/worker-brain/` | Faithful mirror of a real production TypeScript/Next.js/Firebase setup. |
+
+### Repository Structure
+
+```
+claude-code-framework/
+├─ README.md
+├─ stack.schema.json          # validates any stack.json
+├─ stack.example.json         # blank template
+├─ core/
+│  ├─ CLAUDE.template.md      # brain template with {{placeholders}}
+│  ├─ rules/
+│  │  ├─ operating-procedure.md
+│  │  ├─ ratchet-philosophy.md
+│  │  ├─ security-gates.md
+│  │  └─ commands-encode-workflows.md
+│  ├─ commands/
+│  │  ├─ commit-checkpoint.md
+│  │  ├─ ci-simulate.md
+│  │  ├─ typecheck.md
+│  └─ hooks/
+│     ├─ settings.template.json
+│     └─ scripts/
+│        ├─ read-config.py       # manifest reader — heart of config-driven
+│        ├─ secret-scan.sh       # agnostic regex secret scanner
+│        ├─ pre-push-guard.py    # reads gates.prePush.steps; BLOCKING
+│        ├─ ratchet-guard.py     # generic baseline ratchet (Stop hook)
+│        └─ sast-scan.sh         # runs security.sast
+├─ core/security/
+│  ├─ secret-patterns.txt
+│  └─ README.md               # SAST adapter docs
+└─ examples/
+   └─ worker-brain/
+      ├─ stack.json             # fully-filled TypeScript/Next.js/Firebase manifest
+      ├─ settings.json          # real .claude/settings.json (verbatim)
+      ├─ rules/                 # 9 domain rules (verbatim from production)
+      ├─ commands/              # 15 slash commands (verbatim from production)
+      ├─ ast-rules/             # optional TypeScript ast-grep rules
+      └─ scripts/               # 4 production scripts
 ```
 
 ---
 
-## CLAUDE.md — The Brain
-
-The main `CLAUDE.md` is the entry point Claude reads every conversation. It contains:
-
-### What goes here
-- **Stack and env vars** — so Claude knows the tech without asking
-- **Database schema** — collection names, doc ID patterns, relationships
-- **Architectural patterns** — the 5-6 core patterns everything follows
-- **Reference tables** — alert types, cron schedule, navigation routes
-- **Testing commands** — exact bash commands to run tests
-- **Pointers to modular rules** — `@.claude/rules/alert-engine-pattern.md` syntax
-
-### What does NOT go here
-- Implementation details (that's in the code)
-- Tutorials or explanations (Claude already knows TypeScript/Next.js)
-- Things that change weekly (use memory for that)
-
-### Key pattern: Modular Rules
-
-Instead of a 500-line CLAUDE.md, we split domain rules into focused files:
-
-```markdown
-## Modular Rules
-
-@.claude/rules/firestore-conventions.md
-@.claude/rules/alert-engine-pattern.md
-@.claude/rules/cron-security.md
-```
-
-The `@` syntax imports the file's content into CLAUDE.md context. Each rule file is self-contained and referenceable by hooks and commands.
-
----
-
-## Rules
-
-Rules define **invariants that must always hold**. They're the laws of the codebase.
-
-### Rule 1: Alert Engine Pattern (`alert-engine-pattern.md`)
-
-**Core contract:**
-```ts
-class SomeAlertEngine {
-  static evaluate(input: AlertEvaluationInput): Alert[] {
-    // zero DB access — all data is in `input`
-    // zero network calls
-    // zero time-dependence (referenceDate is injected)
-  }
-}
-```
-
-**Why:** Makes every engine unit-testable without mocks. Both the cron path and the snapshot path share the exact same logic.
-
-**Enforced by:** AST rule `no-firestore-in-evaluate`, hook reminder on engine file edit, `/test-alerts` command.
-
-### Rule 2: Cron Security (`cron-security.md`)
-
-Four non-negotiable requirements:
-1. `validateCronSecret()` as the FIRST call
-2. `withErrorReporting()` wrapper
-3. Idempotent operations (upserts, deterministic doc IDs)
-4. Explicit `maxDuration` export
-
-**Why:** Every cron route is public-routable on Vercel — there's no "internal only."
-
-**Enforced by:** AST rules `cron-requires-auth` + `cron-must-declare-maxDuration`, hook reminder on cron file edit.
-
-### Rule 3: Firestore Conventions (`firestore-conventions.md`)
-
-- **Doc ID patterns**: 4 standard formats, never invent new ones
-- **Initialization**: `ignoreUndefinedProperties: true` — undefined is stripped, null is stored
-- **Sub-source detection**: always via `rawData.source`, never infer from clientId
-- **Batch limits**: 500 per batch, `BulkWriter` for more
-- **Indexes**: add BEFORE shipping — queries silently fail without them
-
-**Enforced by:** AST rule `no-null-as-delete-sentinel`, hook reminder on service file edit.
-
----
-
-## Slash Commands
-
-Commands encode multi-step workflows into one-line invocations.
-
-### Development Workflow
-
-| Command | Purpose | Key Behavior |
-|---------|---------|-------------|
-| `/ts-check` | Run `tsc --noEmit` | Reports errors grouped by file, doesn't fix |
-| `/test-alerts` | Run alert engine unit tests | Parses output, maps failures to engine files |
-| `/commit-checkpoint` | Safe commit | Runs ts-check + test-alerts before allowing commit |
-
-### Scaffolding
-
-| Command | Purpose | Key Behavior |
-|---------|---------|-------------|
-| `/new-alert` | Scaffold new alert type | Creates engine method, test, docs row, wiring — leaves predicate as TODO |
-| `/new-channel-sync` | Scaffold channel integration | Service, cron, OAuth, types, docs — full skeleton |
-
-### Operations
-
-| Command | Purpose | Key Behavior |
-|---------|---------|-------------|
-| `/env-check` | Validate env vars | Cross-references CLAUDE.md docs vs `.env.local`, never prints values |
-| `/deploy-indexes` | Deploy Firestore indexes | Diffs local vs deployed, blocks on removed indexes |
-| `/audit-parity` | Data drift detection | Compares stored snapshots vs live API — read-only |
-| `/client-health` | Client health snapshot | Data freshness, alerts, cron failures — one screen |
-| `/slack-preview` | Preview digest | Renders morning/weekly/monthly without posting |
-| `/backfill-client` | Data backfill | Safety checks, dry-run support, budget tracking |
-| `/prompt-version` | AI prompt versioning | Staging → production workflow with diff and token estimates |
-
-### Command Anatomy
-
-Every command is a markdown file with YAML frontmatter:
-
-```markdown
----
-description: One-line description shown in /help
-argument-hint: [optional] [--flags] <required>
----
-
-Context for Claude about what this command does.
-
-Steps:
-1. Specific step with exact bash command
-2. Parse and report
-3. Safety checks
-
-Never <thing that would be dangerous>.
-```
-
-**Design principles:**
-- Commands are **diagnostic by default** — they report, they don't fix (unless explicitly asked)
-- Safety rails are built in — `/commit-checkpoint` blocks on test failures, `/deploy-indexes` blocks on index removal
-- Each command references the rules it enforces
-
----
-
-## Hooks
-
-Hooks run automatically via `.claude/settings.json`. They fire on specific tool events.
-
-### Hook 1: File Change Reminders (PostToolUse on Edit/Write)
-
-When Claude edits a file, context-aware reminders appear:
-
-| File Pattern | Reminder |
-|---|---|
-| `src/lib/alert-engines/*.ts` | "Run /test-alerts before committing" |
-| `/api/cron/**/route.ts` | "Verify validateCronSecret() + withErrorReporting()" |
-| `firestore.indexes.json` | "Use /deploy-indexes to diff before deploying" |
-| `*-service.ts` in `src/lib/` | "Consider running /audit-parity" |
-
-### Hook 2: Error Reporting Check (PostToolUse on Edit/Write)
-
-Runs `scripts/check-error-reporting.js` on any API route file edit. Advisory — warns if `withErrorReporting` / `reportError` / `validateCronSecret` is missing.
-
-### Hook 3: Secret Leak Prevention (PostToolUse on Bash `git commit`)
-
-Runs `scripts/check-no-secrets.sh` before every commit. **Blocking** — exit code 1 stops the commit if secrets are detected.
-
-### Hook 4: Pre-Push Reminder (PostToolUse on Bash `git push`)
-
-Advisory reminder to run `npm run test:pre-push` (TypeScript + alerts + pure function tests).
-
-### Hook 5: Critical Utility Change (PostToolUse on Edit/Write)
-
-When `objective-utils.ts`, `date-utils.ts`, or `cron-auth.ts` is changed, reminds to run `npm run test:unit`.
-
-### Hook 6: Dead-Code Ratchet (Stop hook) — **blocking**
-
-Before Claude ends a turn, runs [knip](https://knip.dev) and compares orphan count vs a committed baseline (`.dead-code-baseline.json`). If the count grew — new orphan exports, files, types, or unused deps — the Stop is **blocked** and Claude is forced to clean up before really finishing.
-
-**Why a Stop hook instead of a nightly cron?** The original idea was a nightly "slop-cleaner" that batch-cleans dead code. But the real fix is at the source: don't let dead code reach the end of a turn. Stop hooks catch regressions at the exact moment Claude says "done" — before the operator ever sees the result.
-
-**Philosophy:** same as the `any`-ratchet. The baseline is the floor. The count can only go down. When the total drops (intentional cleanup), regenerate the baseline.
-
-**What it catches:**
-- Orphan exports / types with no consumer
-- Files never imported by anything
-- `package.json` dependencies not actually used
-- Duplicates, unlisted deps, unresolved imports
-
-**Skip conditions (safe no-ops):**
-- No `.ts/.tsx/.js` changes in the working tree (nothing to check — saves ~5s per idle turn)
-- `SKIP_DEADCODE=1` env var (explicit bypass)
-- knip or baseline missing (hasn't been adopted yet)
-- knip times out or crashes (never block on tooling bugs)
-
-**Adoption (one-time setup for a new project):**
-
-```bash
-# 1. Install knip
-npm install -D knip
-
-# 2. Copy the two scripts from this repo into yours
-cp examples/scripts/check-dead-code-baseline.js <your-repo>/scripts/
-cp examples/scripts/stop-dead-code-guard.py    <your-repo>/scripts/
-
-# 3. Copy the knip config template — edit entry points to match your project
-cp examples/knip.example.json <your-repo>/knip.json
-
-# 4. Add npm scripts to package.json:
-#    "check:dead-code":    "node scripts/check-dead-code-baseline.js",
-#    "dead-code-baseline": "node scripts/check-dead-code-baseline.js --write",
-
-# 5. Freeze the initial baseline (commit .dead-code-baseline.json)
-npm run dead-code-baseline
-
-# 6. Add Stop hook to .claude/settings.json (see snippet below)
-```
-
-**Stop hook snippet for `.claude/settings.json`:**
+## stack.json — The Manifest
+
+Every project that adopts this framework authors one `stack.json` at the project root.
+Each key is **optional** — an absent key means the gate is **silently skipped**.
+Start with one gate and expand.
 
 ```json
 {
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python scripts/stop-dead-code-guard.py",
-            "timeout": 90
-          }
-        ]
-      }
-    ]
+  "language": "typescript",
+  "packageManager": "npm",
+  "commands": {
+    "typecheck": "npx tsc --noEmit",
+    "lint":      "npm run lint",
+    "test":      "npm run test:unit",
+    "build":     "npm run build"
+  },
+  "security": {
+    "secretScan": "core/hooks/scripts/secret-scan.sh",
+    "sast":       "",
+    "depAudit":   "npm audit --audit-level=high"
+  },
+  "ratchets": {
+    "deadCode":   "node scripts/check-dead-code-baseline.js",
+    "structural": "sentrux gate",
+    "baselineDir": ".sentrux/"
+  },
+  "gates": {
+    "preCommit": { "secretScan": "blocking" },
+    "prePush":   { "blocking": true, "steps": ["typecheck", "lint", "test"] }
+  },
+  "paths": {
+    "source": ["src/**"],
+    "codeExtensions": [".ts", ".tsx"]
   }
 }
 ```
 
-**Workflow when the ratchet blocks:**
+Validated by `stack.schema.json`. See `stack.example.json` for a blank template.
 
-1. Claude sees stderr with the list of new orphans + file paths
-2. Either (a) delete the orphan, (b) wire it to a consumer, or (c) run `npm run dead-code-baseline` if OTHER files were cleaned up and the total dropped
-3. Claude is free to stop the turn
+**Language examples:**
 
-**Why this beats a nightly cleaner:** it's the *exact moment* the code was introduced — no investigation needed, no "whose orphan is this", no batch noise a week later.
+| Language | `typecheck` | `lint` | `test` | `depAudit` |
+|---|---|---|---|---|
+| TypeScript | `npx tsc --noEmit` | `npm run lint` | `npm run test:unit` | `npm audit --audit-level=high` |
+| Python | `mypy .` | `ruff check .` | `pytest -q` | `pip-audit` |
+| Go | `go vet ./...` | `golangci-lint run` | `go test ./...` | `govulncheck ./...` |
+| Java | `mvn -q compile` | `mvn checkstyle:check` | `mvn test` | `mvn dependency-check:check` |
+| Rust | `cargo check` | `cargo clippy` | `cargo test` | `cargo audit` |
 
-### Hook 7: Design-Contract Ratchet (Stop hook) — **blocking**
+---
 
-The second Stop-hook ratchet (same philosophy as dead-code, different floor). Before Claude ends a turn that touched a `.tsx`, `scripts/check-design-baseline.js` scans the product-register UI for **visual-contract violations** and blocks if the count grew vs `.design-baseline.json`.
+## Security Layer
 
-It enforces the three *deterministic* non-negotiables of a design system — for this project: no `box-shadow`, no arbitrary `rounded-[…]` radius, no gradient text. The key design choice is **high precision over recall**: a blocking gate must never false-positive, so it only flags unambiguous Tailwind utilities and leaves the judgment calls (e.g. "accent color ≤ 8% of the screen") to an on-demand visual audit. Brand/marketing surfaces are exempt by path.
+Four gates, driven entirely by `stack.json`. None are hardcoded — all adapt via the manifest.
+
+| Gate | Hook Type | Blocking? | Manifest Key |
+|---|---|---|---|
+| **Secret scan** | `PreToolUse` (Bash `git commit`) | ✅ Yes — blocks the commit | `security.secretScan` |
+| **Pre-push quality gate** | `PreToolUse` (Bash `git push`) | ✅ Yes — blocks the push | `gates.prePush.steps` |
+| **Structural ratchet (sentrux)** | Pre-push step | ✅ Yes — as a step | `ratchets.structural` |
+| **SAST / dep-audit** | Configurable | Configurable | `security.sast` / `security.depAudit` |
+| **Security review (guided)** | On-demand (`/security-review`) | No — human/AI review | `security.review` |
+
+### Secret Scan — PreToolUse (not PostToolUse)
+
+`core/hooks/scripts/secret-scan.sh` intercepts `git commit` via **`PreToolUse`** and blocks it
+(exit 1) if staged files match secret patterns.
+
+**Why `PreToolUse` and not `PostToolUse`?** `PostToolUse` fires *after* the commit completes.
+At that point `git diff --cached` is already empty — no staged changes to scan.
+A secret-scan hook wired as `PostToolUse` is a no-op. The correct event is `PreToolUse`.
+
+Patterns detected (from `core/security/secret-patterns.txt`): PEM private keys, AWS AKIA tokens,
+Google OAuth credentials, Anthropic `sk-ant-` tokens, OpenAI `sk-proj-` tokens, Slack `xox*`
+tokens, Meta long-lived tokens, GitHub PATs, Stripe live/test keys.
+
+### Pre-Push Quality Gate — Blocking
+
+`core/hooks/scripts/pre-push-guard.py` intercepts `git push` via **`PreToolUse`** and **blocks it**
+(exit 2) if any configured step fails. It reads `gates.prePush.steps` from `stack.json` and
+resolves each step as either a `commands.<step>` or `ratchets.<step>` entry. All steps run
+regardless of individual failures (mirrors CI `if: always()`) so every problem surfaces in a
+single pass.
+
+**This gate is blocking.** It is `PreToolUse`, returns exit code 2, and aborts the push.
+Describing it as “advisory” is incorrect.
+
+`SKIP_PREPUSH=1` bypass is permitted **only** when all changed files match CI `paths-ignore`
+patterns (`.md`, `.claude/**`, `docs/**`, `.gitignore`). Rejected for any code change.
+
+### Structural Ratchet (sentrux)
+
+[sentrux](https://github.com/ketzal88/sentrux) is a **structural-regression ratchet**, not a SAST
+scanner. It runs as the last step of the pre-push gate (`ratchets.structural` in `stack.json`),
+comparing the codebase against a committed baseline (`ratchets.baselineDir/baseline.json`).
+If the structural metric regressed vs the baseline, the push is blocked.
+
+**sentrux is opt-in and skips silently when unconfigured.** The binary is resolved via the
+`SENTRUX_BIN` env var (default `C:\tmp\sentrux\sentrux.exe`). If the binary or the baseline
+file is absent, the step is a no-op — safe to list in `stack.json` before installing.
+
+sentrux belongs to `ratchets.structural`, **not** to `security.sast`.
+The `security.sast` slot is reserved for one-shot SAST tools like semgrep or bandit.
+
+### SAST / Dep-Audit
+
+`core/hooks/scripts/sast-scan.sh` reads `security.sast` from the manifest and runs it.
+Absent or empty → no-op.
+
+| Language | SAST Tool | `security.sast` value |
+|---|---|---|
+| TypeScript/JS | semgrep | `semgrep --config auto src/` |
+| Python | bandit | `bandit -r . -q` |
+| Go | gosec | `gosec ./...` |
+| Java/Kotlin | semgrep | `semgrep --config auto src/` |
+| Ruby | brakeman | `brakeman --no-pager -q` |
+
+Dep-audit follows the same pattern: set `security.depAudit` to your package manager's audit
+command. See `core/security/README.md` for full adapter documentation.
+
+---
+
+## Core Layer
+
+`core/` is entirely language-agnostic. Verification:
 
 ```bash
-cp examples/scripts/check-design-baseline.js <your-repo>/scripts/
-cp examples/scripts/stop-design-guard.py     <your-repo>/scripts/
-# package.json: "check:design": "node scripts/check-design-baseline.js",
-#               "design-baseline": "node scripts/check-design-baseline.js --write"
-npm run design-baseline   # freeze the floor (commit .design-baseline.json)
+grep -rIE 'tsc|knip|eslint|firestore' core/
+# Must return empty
 ```
 
-Adopting it: edit the regex rules in `check-design-baseline.js` to your own design contract, and the brand-exempt path list. Everything else (baseline diff, Stop hook, bypass via `SKIP_DESIGN=1`) is identical to the dead-code ratchet.
+### core/rules/
 
-### Hook 8: Cron Doc-Sync (PostToolUse) — advisory
-
-Documentation drifts silently. This gate keeps a reference table in `CLAUDE.md` honest against its source of truth. When the cron schedule file changes, `scripts/check-cron-doc-sync.js` diffs the `/api/cron/<name>` endpoints between the workflow file and the `CLAUDE.md` cron table, and surfaces a reminder **only on drift** (silent when in sync). It runs both as a PostToolUse hook (in Claude's sessions) **and in CI** — so it covers manual edits too, not just Claude-driven turns. Name-level only; schedules and descriptions stay human-reviewed.
-
-### Settings File Structure
-
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          { "type": "command", "command": "python -c \"...\"" }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "python -c \"...\"" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Design principles:**
-- Advisory hooks use `stderr` output (visible to Claude but don't block)
-- Blocking hooks use non-zero exit codes
-- All hooks are Python one-liners that parse JSON stdin (the tool use event)
-- Never use hooks for complex logic — keep them under 5 lines
-
----
-
-## Operating Procedure (Auto-Routing)
-
-The hardest problem with a setup this size isn't building the commands — it's that a non-technical operator will never *invoke* them. Twelve slash commands that nobody types are dead weight. The fix is to stop treating the methodology as buttons and encode it as a **router** that Claude reads every session and applies on its own.
-
-`@.claude/rules/operating-procedure.md` is that conductor. It does two things:
-
-**1. Triage by size first (the safety valve).** Without this, a "think → plan → build → review → ship" methodology turns every "what does this function do?" into a five-step ritual. The router opens with: *is this trivial? → answer directly, no ceremony.* The heavy sequence is reserved for substantial work. This single rule is the difference between a methodology that helps and one that gets in the way.
-
-**2. Route by work type.** For substantial work, a table maps *work type → ordered gates*: a UI change implies "implement → smoke-test → design ratchet"; a new engine implies "pure `evaluate()` + test in the same change"; a cron implies "auth + idempotency + keep the doc table in sync". Claude announces the chosen sequence in one line ("this is UI → I'll implement and smoke-test before closing") and follows it.
-
-The operator never picks a command. They watch the methodology happen and interrupt when they want. The slash commands still exist — they're just the *implementation* of each routed step, not something a human has to remember to press.
-
-> This is the layer that makes everything above it actually run. Rules document invariants, hooks enforce them automatically, commands encode workflows — and the operating procedure decides *which* of them to apply, scaled to the task, without waiting to be asked.
-
----
-
-## Subagents
-
-Diagnostic agents that spawn with specialized context. All are **read-only** — they investigate, never modify.
-
-| Agent | Purpose | When to Use |
-|---|---|---|
-| `channel-sync-debugger` | Data parity between API fetches and Firestore | "Google Ads dashboard shows $500 but snapshot has $470" |
-| `alert-engine-tester` | Alert logic tracing | "Why isn't CPA_SPIKE firing for client X?" |
-| `meta-creative-debugger` | Creative decision explanation | "Why did ad 123 get killed?" |
-| `ecommerce-platform-specialist` | Shopify/TN/WooCommerce issues | "Tiendanube orders aren't syncing" |
-| `ai-analyst-prompt-engineer` | System prompt debugging | "The meta_ads analyst is giving generic answers" |
-| `firestore-query-builder` | Query design + index planning | "Build me a query for channel_snapshots from last 30 days" |
-| `cron-health-doctor` | Cron failure correlation | "Morning briefing has been failing for 3 days" |
-
-**When to create a subagent:**
-- The diagnosis requires reading 5+ files and cross-referencing data
-- You find yourself repeating the same investigation pattern
-- The task is read-only (never create subagents that modify code)
-
----
-
-## Skills
-
-Skills are larger knowledge bundles that auto-activate based on task context.
-
-| Skill | Purpose |
+| File | Purpose |
 |---|---|
-| `worker-brain-guide` | Overall architecture — auto-activates on codebase questions |
-| `worker-firestore` | Doc ID patterns, indexes, batch write limits |
-| `worker-cron` | Cron skeleton, auth, idempotency, timeout patterns |
-| `worker-slack-formatting` | Digest formatting, threads, anti-noise budget |
-| `worker-ast-rules` | Static analysis — ast-grep rules for architectural invariants |
-
-**Skill vs Rule vs Command:**
-- **Rule**: an invariant that must always hold (law)
-- **Command**: a workflow you invoke explicitly (tool)
-- **Skill**: domain knowledge that activates contextually (expertise)
-
----
-
-## AST Rules
-
-Static analysis via [ast-grep](https://ast-grep.github.io/) that enforces architectural invariants structurally (not textually — it parses the AST).
-
-### Rules Shipped
-
-| Rule | Severity | What It Catches |
-|---|---|---|
-| `no-firestore-in-evaluate` | error | `db.collection()` inside any `evaluate()` method |
-| `cron-requires-auth` | error | Cron route missing `validateCronSecret` reference |
-| `cron-must-declare-maxDuration` | warning | Cron route without `export const maxDuration` |
-| `no-hardcoded-conversion-metric` | warning | Direct `metrics.purchases` / `metrics.leads` instead of `getPrimaryMetric()` |
-| `no-console-error-swallow` | warning | `catch` block with only `console.error` (should use `reportError`) |
-| `no-null-as-delete-sentinel` | warning | `.update({ field: null })` should use `FieldValue.delete()` |
-
-### Running
-
-```bash
-bash .claude/skills/worker-ast-rules/scan.sh        # Full scan
-ast-grep scan --rule rules/no-firestore-in-evaluate.yml  # Single rule
-```
-
-### When to Add a Rule
-
-All three must be true:
-1. The invariant is already documented in `.claude/rules/*.md`
-2. You've seen it violated at least once
-3. The violation is structural (code shape), not semantic (logic)
-
----
-
-## How It All Connects
-
-```
-User types: /commit-checkpoint
-    │
-    ├─ Command reads its .md definition
-    ├─ Step 1: git diff --stat (what changed?)
-    ├─ Step 2: if alert-engine files → /test-alerts
-    ├─ Step 3: /ts-check
-    ├─ Step 4: propose commit message
-    ├─ Step 5: git commit
-    │     │
-    │     └─ Hook fires: check-no-secrets.sh (blocking)
-    │
-    └─ Done. User reviews.
-
-User edits: src/lib/alert-engines/google-alert-engine.ts
-    │
-    ├─ Hook fires: "Run /test-alerts before committing"
-    ├─ Hook fires: check-error-reporting.js (advisory)
-    │
-    └─ On next commit, /commit-checkpoint will catch regressions
-
-User asks: "Why isn't CPA_SPIKE firing for client X?"
-    │
-    ├─ Subagent: alert-engine-tester spawns
-    ├─ Reads engine code + test fixtures
-    ├─ Traces the evaluate() logic
-    │
-    └─ Reports: threshold is 30% but client's delta is 28%
-```
-
-### The Enforcement Pyramid
-
-```
-         ┌─────────┐
-         │  Hooks   │  ← Automatic, every action
-         │ (block)  │
-         ├──────────┤
-         │ AST Rules│  ← On-demand or CI, structural
-         │ (scan)   │
-         ├──────────┤
-         │ Commands │  ← User-invoked workflows
-         │ (/slash) │
-         ├──────────┤
-         │  Rules   │  ← Always-loaded context
-         │ (.md)    │
-         ├──────────┤
-         │ CLAUDE.md│  ← Architecture + reference
-         └──────────┘
-```
-
-Each layer reinforces the ones below it:
-- **CLAUDE.md** teaches Claude the patterns
-- **Rules** encode the invariants
-- **Commands** execute the verification workflows
-- **AST rules** catch structural violations
-- **Hooks** make enforcement automatic
-
----
-
-## Plugins & Development Workflow Skills
-
-Beyond the project-specific setup, we use several **Claude Code plugins** that add development workflow discipline. These are installable plugins — they work across any project.
-
-### Superpowers Plugin
-
-The [superpowers](https://github.com/anthropics/claude-code-plugins) plugin adds 14 skills that enforce disciplined software development. They auto-activate based on context — you don't invoke them manually.
-
-#### The Development Lifecycle
-
-```
-  Idea → Brainstorming → Writing Plans → Executing Plans → Verification → Finishing Branch
-           ↓                                    ↓
-     systematic-debugging              requesting-code-review
-     (if bugs found)                   receiving-code-review
-```
-
-#### Core Skills
-
-| Skill | When It Activates | What It Enforces |
-|-------|------------------|-----------------|
-| **brainstorming** | Before any creative work — features, components, modifications | Explores intent, proposes 2-3 approaches with trade-offs, gets design approval BEFORE any code is written. Hard gate: no implementation until design is approved. |
-| **writing-plans** | After brainstorming produces a spec | Creates bite-sized implementation plans (2-5 min per step). Each step is one action: write test → verify it fails → implement → verify it passes → commit. Plans are saved to `docs/superpowers/plans/`. |
-| **executing-plans** | When a written plan exists | Loads plan, executes task-by-task with checkpoints. Stops on any blocker instead of guessing. Marks progress via TodoWrite. |
-| **test-driven-development** | Before writing any implementation code | Red-Green-Refactor cycle. Iron law: no production code without a failing test first. If you wrote code before the test? Delete it. Start over. |
-| **systematic-debugging** | On any bug, test failure, or unexpected behavior | Four phases: (1) Root cause investigation, (2) Hypothesis formation, (3) Targeted fix, (4) Verification. Iron law: no fixes without root cause investigation first. |
-| **verification-before-completion** | Before claiming work is done | Iron law: no completion claims without fresh verification evidence. "Should pass" is not evidence — run the command and show the output. |
-| **dispatching-parallel-agents** | When facing 2+ independent tasks | One agent per independent problem domain. Prevents sequential investigation of unrelated failures. |
-| **requesting-code-review** | After completing a feature | Triggers a code review subagent to validate work meets requirements. |
-| **receiving-code-review** | When getting review feedback | Requires technical verification of suggestions before implementing — no blind agreement. |
-| **finishing-a-development-branch** | When implementation is complete | Guides merge/PR/cleanup decision with structured options. |
-| **using-git-worktrees** | Before feature work needing isolation | Creates isolated git worktrees for parallel development. |
-| **subagent-driven-development** | For plans with independent tasks | Dispatches parallel agents for non-blocking tasks in the plan. |
-| **writing-skills** | When creating new skills | Meta-skill for authoring well-structured skills. |
-
-#### Key Design Principles
-
-1. **Hard gates over soft suggestions.** "No code before design approval" is enforced, not suggested.
-2. **Iron laws are non-negotiable.** Each skill has one — the thing that, if violated, invalidates the entire workflow.
-3. **Auto-activation over manual invocation.** Skills fire based on context, not user memory.
-4. **Chained skills.** Brainstorming → writing-plans → executing-plans → finishing-branch is a pipeline where each step invokes the next.
-
-### Hookify Plugin
-
-[Hookify](https://github.com/anthropics/claude-code-plugins) creates **behavioral rules** that trigger on specific events. Unlike settings.json hooks (which run shell commands), hookify rules are markdown files that inject context or warnings into the conversation.
-
-#### Rule Format
-
-```markdown
----
-name: warn-dangerous-rm
-enabled: true
-event: bash
-pattern: rm\s+-rf
----
-
-STOP. You are about to run a recursive force-delete.
-Verify the path is correct and not a parent directory.
-```
-
-#### Event Types
-
-| Event | Triggers On |
-|-------|------------|
-| `bash` | Bash tool commands |
-| `file` | Edit, Write, MultiEdit tools |
-| `stop` | When agent wants to stop working |
-| `prompt` | When user submits a prompt |
-| `all` | All events |
-
-#### Actions
-
-- `warn` (default) — Shows the message but allows the operation
-- `block` — Prevents the operation entirely
-
-Rules are stored as `.claude/hookify.{rule-name}.local.md` files (gitignored by default — personal preferences).
-
-### Learning & Explanatory Mode
-
-We run Claude Code in **learning mode** — a combination of interactive learning with educational explanations. This is configured via session settings (not a plugin).
-
-#### What It Does
-
-Before and after writing code, Claude provides educational insights:
-
-```
-★ Insight ─────────────────────────────────────
-The functional core / imperative shell pattern keeps all side effects
-at the boundary. evaluate() is pure computation — run() is the shell
-that fetches data and injects dependencies like referenceDate.
-─────────────────────────────────────────────────
-```
-
-#### When It Requests User Code Contributions
-
-Instead of implementing everything, Claude identifies spots where the user's input matters:
-
-- Business logic with multiple valid approaches
-- Error handling strategies
-- Algorithm choices
-- UX decisions
-
-It creates the file with context, adds function signatures, and asks the user to write 5-10 lines of meaningful code. Not busy work — decisions that shape the feature.
-
-### Other Useful Plugins
-
-| Plugin | Purpose |
-|--------|---------|
-| **frontend-design** | Production-grade UI with high design quality, avoids generic AI aesthetics |
-| **claude-code-setup** | Analyzes codebase and recommends automations (hooks, skills, subagents) |
-| **claude-md-management** | Audits and improves CLAUDE.md files |
-| **plugin-dev** | Tools for creating your own plugins (agents, commands, skills, hooks) |
-| **skill-creator** | Meta-skill for creating and testing new skills |
-| **playground** | Creates interactive HTML playgrounds for visual configuration |
-
-### GSD (Get Shit Done) — Project-Scale Orchestration
-
-[GSD](https://github.com/coleam00/gsd) is a full project management framework for Claude Code. While superpowers handles individual feature development (brainstorm → plan → execute), GSD handles **multi-phase project delivery** with roadmaps, milestones, and parallel agent execution.
-
-#### When to Use GSD vs Superpowers
-
-| Scenario | Use |
-|----------|-----|
-| Single feature or bug fix | Superpowers (brainstorm → plan → execute) |
-| Multi-phase project (5+ phases, dependencies) | GSD (roadmap → phases → wave execution) |
-| Greenfield project setup | GSD `/gsd:new-project` |
-| Quick task, no planning needed | GSD `/gsd:fast` or just do it |
-
-#### The GSD Lifecycle
-
-```
-/gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase → /gsd:verify-work
-      │                    │                    │                    │
-      ▼                    ▼                    ▼                    ▼
-  PROJECT.md          Discussion           Research             Wave-based
-  ROADMAP.md          + assumptions         → Plan              parallel
-  STATE.md            gathering             → Verify            execution
-```
-
-#### Research-First Planning (`/gsd:plan-phase`)
-
-GSD doesn't jump to planning — it researches first:
-
-1. **Research phase** — A `gsd-phase-researcher` agent investigates the technical approach, reads docs, checks APIs, and writes `RESEARCH.md`
-2. **Planning phase** — A `gsd-planner` agent reads the research and creates detailed `PLAN.md` files with task breakdown
-3. **Plan verification** — A `gsd-plan-checker` agent reviews the plan against the phase goal (goal-backward analysis)
-4. **Revision loop** — If the checker finds issues, the planner revises (max 3 iterations)
-
-Each step is a **separate subagent** with fresh context — the orchestrator stays lean and coordinates.
-
-#### Wave-Based Parallel Execution (`/gsd:execute-phase`)
-
-This is where GSD shines. Instead of executing tasks sequentially, it groups plans into **waves** based on dependencies:
-
-```
-Phase 5: Authentication System
-├── Wave 1 (parallel — no dependencies)
-│   ├── Plan 01: Database schema + migrations      → Agent A (worktree)
-│   └── Plan 02: Auth provider integration          → Agent B (worktree)
-├── Wave 2 (parallel — depends on Wave 1)
-│   ├── Plan 03: API middleware                     → Agent C (worktree)
-│   └── Plan 04: Session management                 → Agent D (worktree)
-└── Wave 3 (sequential — depends on Wave 2)
-    └── Plan 05: E2E auth flow tests                → Agent E (worktree)
-```
-
-**How it works:**
-
-1. **Discover plans** — Reads all `PLAN-*.md` files in the phase directory
-2. **Analyze dependencies** — Groups plans into waves by dependency order
-3. **Spawn parallel agents** — Each plan gets a `gsd-executor` subagent in an **isolated git worktree** (no merge conflicts)
-4. **Wait for wave completion** — Spot-check via SUMMARY.md + git log (handles signal failures)
-5. **Post-wave hooks** — Run pre-commit hooks once after all agents finish (they commit with `--no-verify` to avoid contention)
-6. **Next wave** — Only starts after all plans in the current wave complete
-
-**Key design decisions:**
-
-- **Worktree isolation** — Each agent gets its own copy of the repo. No merge conflicts between parallel agents.
-- **Orchestrator stays lean** — Passes file paths, not content. Agents read files with their fresh context window.
-- **Spot-check fallback** — If an agent's completion signal is lost, the orchestrator checks for SUMMARY.md and recent commits to verify success.
-- **Interactive mode** — `--interactive` flag runs plans sequentially inline (no subagents) with user checkpoints between tasks. Lower token usage, good for small phases.
-
-#### Other GSD Commands Worth Knowing
+| `operating-procedure.md` | Auto-router: triage by size (trivial → answer directly; substantial → apply sequence). Route-by-work-type table. |
+| `ratchet-philosophy.md` | “The baseline is the floor” contract. Skip conditions every ratchet must implement. |
+| `security-gates.md` | Canonical statement of all four security gates. Correct hook types (secret-scan = PreToolUse, pre-push = blocking). |
+| `commands-encode-workflows.md` | Commands are the implementation of auto-routing, not buttons humans press. |
+
+### core/commands/
 
 | Command | Purpose |
-|---------|---------|
-| `/gsd:fast` | Inline execution for trivial tasks — no subagents, no planning overhead |
-| `/gsd:autonomous` | Run all remaining phases automatically (discuss → plan → execute per phase) |
-| `/gsd:debug` | Systematic debugging with persistent state across context resets |
-| `/gsd:map-codebase` | Parallel codebase analysis — spawns mapper agents by focus area |
-| `/gsd:verify-work` | Conversational UAT — validates features through goal-backward analysis |
-| `/gsd:resume-work` | Restores context from previous session via STATE.md |
-| `/gsd:manager` | Interactive command center for managing multiple phases |
+|---|---|
+| `/commit-checkpoint` | Run all configured gates, then commit safely. Reads manifest. Never `--amend`/`--no-verify`. |
+| `/ci-simulate` | Run all `gates.prePush.steps` in order, report all failures (CI `if: always()` semantics). |
+| `/typecheck` | Run `commands.typecheck` from manifest; report errors. |
+| `/env-check` | Validate env vars documented in CLAUDE.md vs local env file. Never prints values. |
 
-#### What GSD Teaches About Scaling Claude Code
+### core/hooks/
 
-Even if you don't use GSD directly, its patterns are worth adopting:
+`core/hooks/settings.template.json` — copy to `.claude/settings.json`. Pre-wired:
+- `PreToolUse` (Bash): `pre-push-guard.py` (blocking) + `secret-scan.sh` (blocking on commit)
+- `Stop`: `ratchet-guard.py` (dead-code ratchet, blocking)
 
-1. **State files beat conversation memory.** `STATE.md` persists across sessions. Claude can resume from where it left off without re-reading the entire conversation.
-2. **Orchestrator ≠ executor.** The agent that coordinates should NOT be the one writing code. Keep orchestration lean (file paths, not content).
-3. **Worktrees solve parallel conflicts.** `isolation: "worktree"` gives each agent its own branch and working directory — zero merge conflicts.
-4. **Goal-backward verification.** Don't check "did the tasks complete?" — check "does the codebase achieve the phase goal?" These are different questions.
-5. **Research before planning, planning before execution.** Three separate agents, three separate context windows. Each one is focused.
+`core/hooks/scripts/read-config.py` — the manifest reader. Takes a dotted key path
+(e.g. `commands.typecheck`), walks up the directory tree to find `stack.json`, returns
+the value (JSON for arrays/objects). Missing key → exit 1 = safe skip for callers.
 
-### Installing Plugins
+---
+
+## Worker Brain Reference Example
+
+`examples/worker-brain/` is a **verbatim mirror** of the `.claude/` directory running in
+production in the Worker Brain SaaS (TypeScript/Next.js 14/Firebase/Vercel).
+Use it as the definitive reference for a fully-adopted setup.
+
+### Contents
+
+| Path | Description |
+|---|---|
+| `stack.json` | Fully-filled manifest: 8 commands, sentrux as structural ratchet, design + cron-doc gates |
+| `settings.json` | Real `.claude/settings.json`: 2 blocking `PreToolUse` hooks, 6 advisory `PostToolUse` hooks, 2 blocking `Stop` hooks |
+| `rules/` | 9 domain rules (verbatim from production) |
+| `commands/` | 15 slash commands (verbatim from production) |
+| `ast-rules/` | TypeScript ast-grep rules — optional structural enforcement add-on |
+| `scripts/` | 4 production scripts (pre-push guard, dead-code ratchet, secret scan) |
+
+### Rules (9)
+
+| Rule | Domain |
+|---|---|
+| `alert-engine-pattern.md` | Pure-computation contract: no DB/network in `evaluate()` |
+| `ci-zero-failure.md` | What CI checks, where each check lives, SKIP_PREPUSH rules |
+| `code-quality-ratchets.md` | any-type ratchet, large files (>800 lines), dead-code, design contract |
+| `console-error-pattern.md` | `console.error` prohibited in lib/api; `reportError()` for runtime errors |
+| `cron-security.md` | `validateCronSecret()` first, `withErrorReporting()` wrap, idempotency, maxDuration |
+| `firestore-conventions.md` | 4 doc ID patterns, ignoreUndefinedProperties, index drift prevention |
+| `folder-organization.md` | scripts/ subcategories, import path conventions |
+| `operating-procedure.md` | WB-specific routing (alert engines, cron, channel_snapshots, ARS currency) |
+| `regional-thresholds.md` | ARS vs USD scale differences for ROAS/CPA/spend thresholds |
+
+### Commands (15)
+
+| Command | Purpose |
+|---|---|
+| `/ts-check` | Run `tsc --noEmit`, report errors |
+| `/test-alerts` | Run alert engine unit tests, map failures to engine files |
+| `/commit-checkpoint` | ESLint auto-fix + tsc + tests + any-ratchet + commit safely |
+| `/ci-simulate` | Run all 6 CI steps in order, report all failures at once |
+| `/new-alert` | Scaffold new alert type (engine, test, docs, wiring) |
+| `/new-channel-sync` | Scaffold new channel integration (service, cron, OAuth, types) |
+| `/env-check` | Validate env vars vs `.env.local` |
+| `/deploy-indexes` | Diff local vs deployed Firestore indexes, deploy safely |
+| `/audit-parity` | Data drift detection between stored snapshots and live API |
+| `/client-health` | Per-client health snapshot (data freshness, alerts, cron failures) |
+| `/slack-preview` | Preview a Slack digest dry-run without posting |
+| `/backfill-client` | Data backfill with dry-run safety and budget tracking |
+| `/prompt-version` | AI Analyst system prompt versioning (staging → production) |
+| `/design-gate` | Enforce design-contract ratchet on UI changes |
+| `/fix-any` | Replace `any` types in a file with typed alternatives |
+
+### Hooks (settings.json — 10 total)
+
+| Event | Hook | Blocking? |
+|---|---|---|
+| `PreToolUse` (Bash `git push`) | `pre-push-quality-guard.py` | ✅ Yes (exit 2) |
+| `PreToolUse` (Bash `git commit`) | `check-no-secrets.sh` | ✅ Yes (exit 1) |
+| `PostToolUse` (Edit/Write) | File-type reminders (alert engine / cron / indexes / service) | Advisory |
+| `PostToolUse` (Edit/Write) | `check-error-reporting.js` (API routes) | Advisory |
+| `PostToolUse` (Edit/Write) | `check-no-new-any.js` (any-type ratchet) | Advisory |
+| `PostToolUse` (Edit/Write) | `check-cron-doc-sync.js` (crons.yml sync) | Advisory |
+| `PostToolUse` (Edit/Write) | `use-client` directive check (React hooks) | Advisory |
+| `PostToolUse` (Edit/Write) | Critical utility change reminder | Advisory |
+| `Stop` | `stop-dead-code-guard.py` (dead-code ratchet) | ✅ Yes (exit 2) |
+| `Stop` | `stop-design-guard.py` (design-contract ratchet) | ✅ Yes (exit 2) |
+
+Both `PreToolUse` hooks are **blocking**: the pre-push guard exits 2 to abort the push;
+the secret scan exits 1 to abort the commit. Both `Stop` hooks exit 2 to force cleanup
+before Claude ends a turn.
+
+---
+
+## Adopting This Framework
+
+See [docs/adoption.md](docs/adoption.md) for the full step-by-step guide.
+
+Short version:
 
 ```bash
-# Install from the official registry
-claude plugins install superpowers
-claude plugins install hookify
-claude plugins install frontend-design
+# 1. Copy the universal core
+cp -r core/ your-project/.claude/core/
 
-# GSD uses a different install method
-# See: https://github.com/coleam00/gsd
+# 2. Copy the settings template
+cp core/hooks/settings.template.json your-project/.claude/settings.json
+
+# 3. Write your stack.json at the project root
+cp stack.example.json your-project/stack.json
+# fill in: commands.typecheck, commands.lint, commands.test, security.secretScan, gates.prePush.steps
+
+# 4. Create CLAUDE.md from the template
+cp core/CLAUDE.template.md your-project/.claude/CLAUDE.md
+# fill {{placeholders}}
+
+# 5. Freeze baselines (one-time)
+# run your dead-code tool with --write, commit the baseline file
 ```
 
-Plugins are global (not per-project). Their skills auto-activate across all your projects based on task context.
-
----
-
-## Adapting This for Your Project
-
-1. **Install superpowers first.** `claude plugins install superpowers` — gives you brainstorming, TDD, verification, and debugging discipline for free across all projects.
-2. **Start with CLAUDE.md.** Document your stack, patterns, and the 3-5 rules that matter most.
-3. **Extract rules.** When you correct Claude twice for the same thing, create a `.claude/rules/` file.
-4. **Add commands.** When you run the same 3 commands in sequence repeatedly, make a slash command.
-5. **Wire hooks.** When a rule gets violated despite documentation, add a hook that reminds or blocks.
-6. **AST rules last.** Only when you have documented rules that keep getting violated structurally.
-7. **Build skills for your domain.** When Claude needs specialized knowledge (your API, your database patterns, your team's conventions), create a skill.
-
-The goal is not maximum configuration — it's zero repeated corrections.
-
----
-
-## Swarm / Multi-Agent Patterns
-
-Beyond using plugins for parallel execution, we built a **reactive event layer** in our production app that lays the foundation for autonomous agent chains. These patterns apply to any system where multiple AI agents need to coordinate.
-
-### The Problem
-
-Before scaling agent chains (critic loops, fan-out digests, autonomous diagnostics), you need two things:
-1. **Cost visibility** — without per-feature cost tracking, "the swarm will pay for itself via cache hits" is a guess, not a number.
-2. **A shared signal bus** — agents need to react to "what happened" without re-reading entire databases.
-
-### Pattern 1: Brain Events (Signal Blackboard)
-
-A shared `brain_events` collection where any service can fire-and-forget a business-level signal:
-
-```ts
-// Alert engine emits after evaluation
-await BrainEventsService.record({
-  clientId: "abc123",
-  kind: "alert",
-  channel: "META",
-  severity: "critical",
-  code: "CPA_SPIKE",
-  message: "CPA jumped 45% vs 7d average",
-  source: "meta-alert-engine",
-  dedupeKey: "abc123:CPA_SPIKE:2026-04-16",  // idempotent
-});
-```
-
-**Key design decisions:**
-
-| Decision | Why |
-|----------|-----|
-| Fire-and-forget (never throws) | Producers don't know or care who consumes the event |
-| `dedupeKey` as doc ID | Retried crons don't double-write — same key = upsert |
-| Post-filter in memory | Avoids one composite index per filter dimension |
-| `consumed` + `consumedBy` fields | Digests mark events as seen so the next run skips them |
-| `cleanupOldRecords(45)` | Weekly cron garbage-collects — the collection doesn't grow forever |
-| BulkWriter for `recordMany()` | Alert engines produce 10-30 events per run — batch writes |
-
-**Consumers:**
-- Morning briefing queries `since(lastRunTimestamp)` instead of re-scanning all snapshots
-- AI Analyst includes recent events in context XML for zero-shot awareness
-- Future: Cron Doctor reads `kind: "cron"` events to detect failure patterns
-
-### Pattern 2: LLM Cost Tracking
-
-Every Claude/Gemini call gets a row in `llm_usage_events` with tokens, cost, and feature attribution:
-
-```ts
-await LlmUsageTracker.track({
-  feature: "ai-analyst",
-  step: "diagnose",
-  clientId: "abc123",
-  provider: "anthropic",
-  model: "claude-sonnet-4-6",
-  inputTokens: 12500,
-  outputTokens: 890,
-  cachedInputTokens: 10200,   // prompt cache hit
-  durationMs: 3400,
-  stopReason: "end_turn",
-});
-// costUsd computed automatically from built-in price table
-```
-
-**Why this matters for agent chains:**
-- Before adding a critic loop (Haiku reviews Sonnet's output), you need to prove the base cost
-- "Feature X costs $0.03/call with 80% cache hits" → adding a $0.008 Haiku critic is justified
-- Without this data, every agent chain proposal is vibes
-
-**Price table is in-code**, not a config file — one source of truth, includes cache read/write multipliers.
-
-### Pattern 3: Context Cache (Two-Tier)
-
-For the AI Analyst, each question rebuilds context from Firestore (10-50 reads). A two-tier cache eliminates redundant reads within a session:
-
-```
-Tier 1: In-process LRU Map (sub-ms, zero Firestore cost, dies with Lambda)
-Tier 2: Firestore doc with TTL (shared across instances, survives recycles)
-```
-
-**TTL is 5 minutes** — short because ad metrics move fast. Better to re-read than serve stale data during diagnosis.
-
-**Invalidation API exists but isn't wired yet** — the plan is sync crons call `invalidateClientContext()` after writing new snapshots. This is the natural bridge to event-driven invalidation via brain_events.
-
-### How These Three Connect
-
-```
-Sync crons → brain_event(kind:"sync") → invalidateClientContext()
-                                              ↓
-Alert engines → brain_event(kind:"alert") → morning briefing reads since(lastRun)
-                                              ↓
-AI Analyst ← context cache (warm) ← brain_events in context XML
-    ↓
-LLM usage tracker → /admin dashboard → proves cost before adding agents
-```
-
-The key insight: **build the observability layer before building the agents.** You can't optimize what you can't measure, and you can't coordinate agents without a shared signal bus.
-
-### Adopting This Pattern
-
-1. **Start with cost tracking.** Wire `LlmUsageTracker.track()` into every LLM call. This is 3 lines of code per call site.
-2. **Add brain events to your alert/sync services.** One `record()` call at the end of each engine run.
-3. **Build the context cache** only when you have a hot path (like a chat interface) that makes repeated DB reads.
-4. **Only then** build agent chains — now you have the data to justify the cost and the signals to coordinate them.
+No language-specific code edits needed in `core/`. The framework adapts entirely through `stack.json`.

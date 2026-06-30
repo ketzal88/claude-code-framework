@@ -1,0 +1,10 @@
+id: cron-requires-auth
+language: TypeScript
+severity: error
+message: "Cron route is missing validateCronSecret() — every /api/cron/** route must call this first."
+rule:
+  kind: export_statement
+  pattern: export async function POST($$$) { $$$BODY }
+  not:
+    has:
+      pattern: validateCronSecret($$$)

@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ketzal88/claude-code-framework/stack.schema.json",
+  "title": "Stack Manifest",
+  "description": "Per-project manifest for claude-code-framework. Every key is optional — absent key = gate skipped.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "language": {
+      "type": "string",
+      "description": "Primary language label (typescript, python, java, go, rust, ...)"
+    },
+    "packageManager": {
+      "type": "string",
+      "description": "Package manager (npm, yarn, pnpm, pip, maven, gradle, cargo, ...)"
+    },
+    "commands": {
+      "type": "object",
+      "description": "Shell commands for gates. Absent key = that gate skipped silently.",
+      "properties": {
+        "typecheck": { "type": "string", "description": "Type-check command" },
+        "lint":      { "type": "string", "description": "Lint command" },
+        "test":      { "type": "string", "description": "Primary test command" },
+        "build":     { "type": "string", "description": "Build command" }
+      },
+      "additionalProperties": { "type": "string" }
+    },
+    "security": {
+      "type": "object",
+      "description": "Security tool configuration.",
+      "properties": {
+        "secretScan": {
+          "type": "string",
+          "description": "Secret-scan script path (default: core/hooks/scripts/secret-scan.sh)"
+        },
+        "sast": {
+          "type": "string",
+          "description": "One-shot SAST command. Empty = skip."
+        },
+        "depAudit": {
+          "type": "string",
+          "description": "Dependency audit command. Empty = skip."
+        },
+        "review": {
+          "type": "object",
+          "description": "Config for the guided security-review triage (core/hooks/scripts/security-triage.sh). All keys optional; an absent key skips that check.",
+          "properties": {
+            "apiDir":          { "type": "string", "description": "Directory holding route handlers (default: src/app/api or app/api)." },
+            "tenantParam":     { "type": "string", "description": "Regex of tenant-id param names used in routes (e.g. clientId|tenantId|orgId)." },
+            "authSignals":     { "type": "string", "description": "Regex of tokens that prove a route does auth (your guard fns + session/token/hmac)." },
+            "cronCheck":       { "type": "string", "description": "Regex proving a cron route checks its secret (e.g. validateCronSecret|CRON_SECRET)." },
+            "publicEnvPrefix": { "type": "string", "description": "Env-var prefix a build inlines into the client bundle (NEXT_PUBLIC_ for Next.js, VITE_ for Vite, PUBLIC_ for SvelteKit/Astro). Set to enable the client-bundle secret scan." },
+            "publicEnvAllow":  { "type": "string", "description": "Optional regex of known-public env names to exclude (e.g. FIREBASE — Firebase web config is public by design)." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ratchets": {
+      "type": "object",
+      "description": "Baseline ratchet gates. Each skips silently if baseline or binary absent.",
+      "properties": {
+        "deadCode": {
+          "type": "string",
+          "description": "Dead-code ratchet command (must exit 1 on regression, 0 on pass, 2 on tooling error)."
+        },
+        "structural": {
+          "type": "string",
+          "description": "Structural regression command run as a prePush step (e.g. sentrux gate)."
+        },
+        "baselineDir": {
+          "type": "string",
+          "description": "Directory for structural baseline file (default: .sentrux/)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gates": {
+      "type": "object",
+      "description": "Gate configuration.",
+      "properties": {
+        "preCommit": {
+          "type": "object",
+          "properties": {
+            "secretScan": {
+              "type": "string",
+              "enum": ["blocking", "advisory", "off"],
+              "default": "blocking"
+            }
+          },
+          "additionalProperties": false
+        },
+        "prePush": {
+          "type": "object",
+          "properties": {
+            "blocking": { "type": "boolean", "default": true },
+            "steps": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Ordered step keys resolved from commands.* and ratchets.*"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Source glob patterns for scan/ratchet scope"
+        },
+        "codeExtensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extensions that count as code changes (for ratchet skip logic)"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
