@@ -1,6 +1,6 @@
-# Multi-tenant Authorization — el riesgo #1 de Worker Brain
+# Multi-tenant Authorization — el riesgo #1 de ExampleApp
 
-Worker Brain es multi-tenant: un equipo opera sobre ~45 clientes. El riesgo dominante es **acceso
+ExampleApp es multi-tenant: un equipo opera sobre ~45 clientes. El riesgo dominante es **acceso
 cruzado entre clientes** (IDOR) y **escalación de rol**. Esta es la primera categoría a revisar en
 cualquier ruta que toque datos de cliente.
 
@@ -19,7 +19,7 @@ cualquier ruta que toque datos de cliente.
    `/admin/cron`, `/admin/system`, etc.).
 2. **`users.role`** (`'admin' | 'member'`) + `teamId` → lógica de negocio en las rutas API vía
    `getAuthenticatedUser()` (`@/lib/auth-helpers`).
-3. **`admin_users.role = 'super'`** → propuestas y funciones SUPER (Gabriel, Sebastián).
+3. **`admin_users.role = 'super'`** → propuestas y funciones SUPER (el operador, el operador).
 
 Al revisar: el middleware protege *navegación* a páginas. **No protege las rutas `/api/**`** (el matcher
 las excluye: `"/((?!api|...).*)"`). Por lo tanto **cada handler de `/api/**` debe autenticar y autorizar
@@ -68,7 +68,7 @@ otra superficie de confianza. Reglas:
 
 - Sesión separada: cookie `portal-session` (no `session`), rol `'client'`, colecciones `portal_users` /
   `portal_clients` (no `users` / `clients`).
-- `requirePortalSession()` (`@/lib/portal/portal-session`) **rechaza emails @worker.ar** con 403
+- `requirePortalSession()` (`@/lib/portal/portal-session`) **rechaza emails @example.com** con 403
   (`isWorkerEmail`) — un miembro del equipo no debe poder mirar el portal de un cliente vía su sesión.
 - `requireActivePortalClient()` agrega 402 si el plan no está activo — usar en endpoints que cuestan
   plata (AI analyst, sync manual). La redirección client-side a `/portal/locked` es UX, **no**

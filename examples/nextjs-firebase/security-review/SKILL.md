@@ -1,7 +1,7 @@
 ---
 name: security-review
 description: >
-  Revisión de seguridad de cambios de código en Worker Brain — authz multi-tenant,
+  Revisión de seguridad de cambios de código en ExampleApp — authz multi-tenant,
   auth e input-validation en rutas API, exposición de datos en Firestore, la superficie
   AI/MCP, y secrets/dependencias. Usar al revisar código por problemas de seguridad,
   ANTES de shippear cambios a auth/authz, rutas API, endpoints cron, webhooks, writes a
@@ -9,10 +9,10 @@ description: >
   review" / "auditoría de seguridad" / "revisá la seguridad de esto".
 ---
 
-# Security Review — Worker Brain
+# Security Review — ExampleApp
 
 Revisión de seguridad **anclada a este stack** (Next.js 14 App Router + Firestore Admin SDK +
-multi-tenant + IA). No es un checklist genérico: Worker Brain ya tiene varios controles (hooks de
+multi-tenant + IA). No es un checklist genérico: ExampleApp ya tiene varios controles (hooks de
 secrets, `validateCronSecret`, `requireClientAccess`). El valor está en verificar lo que es único
 de acá y no re-flaggear lo que ya está cubierto.
 

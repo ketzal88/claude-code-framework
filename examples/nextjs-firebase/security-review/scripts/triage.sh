@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Worker Brain — security review triage (PRIMER PASE, no es verdad absoluta).
+# ExampleApp — security review triage (PRIMER PASE, no es verdad absoluta).
 # Surface de candidatos de alta señal. CADA hit hay que verificarlo leyendo el código.
 # No reemplaza la revisión manual; arranca con lo barato y determinístico.
 #
@@ -8,7 +8,7 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 
 echo "════════════════════════════════════════════════════════════"
-echo " Security triage — Worker Brain"
+echo " Security triage — ExampleApp"
 echo " Cada hit = candidato, NO confirmación. Leer el código de cada uno."
 echo "════════════════════════════════════════════════════════════"
 

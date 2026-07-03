@@ -32,7 +32,7 @@ Each project keeps its own table in `.claude/rules/incident-triage.md`:
 | job ran "green" but produced 0 output | idempotency lock already taken, or a filter excluded everything | check the day's lock doc + pipeline filters |
 
 Reference implementation with 11 production rows:
-`examples/worker-brain/rules/incident-triage.md`.
+`examples/nextjs-firebase/rules/incident-triage.md`.
 
 ## The upstream fix
 

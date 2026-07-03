@@ -21,7 +21,7 @@ Firestore se inicializa con `ignoreUndefinedProperties: true`. Implicancias de s
 
 ## <a id="tokens"></a>Tokens OAuth y secretos en reposo
 
-Worker Brain guarda credenciales de terceros en Firestore. Al revisar un cambio que las toca:
+ExampleApp guarda credenciales de terceros en Firestore. Al revisar un cambio que las toca:
 - Colecciones con tokens: `tiendanube_auth_tokens`, tokens Shopify/Meta/Google en docs `clients`,
   `team_2fa_tokens` (secretos TOTP **encriptados** con `TOTP_ENCRYPTION_KEY`, AES).
 - Verificar: (1) el token nunca se devuelve al cliente en una respuesta JSON; (2) no se loguea; (3) el

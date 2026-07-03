@@ -44,4 +44,4 @@ found the agent re-picking the broken path in ~20% of sessions, burning
   command position where possible. The long tail stays in the table as
   prose.
 
-Reference implementation: `examples/worker-brain/rules/windows-environment.md`.
+Reference implementation: `examples/nextjs-firebase/rules/windows-environment.md`.

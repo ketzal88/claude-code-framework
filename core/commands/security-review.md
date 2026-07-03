@@ -12,7 +12,7 @@ A change-level security review. The deterministic triage is driven by `stack.jso
    bash core/hooks/scripts/security-triage.sh
    ```
    It reads `security.review.*` from `stack.json` and runs the deterministic checks (cron-secret coverage, client-bundle secret exposure, tenant routes without an auth signal). Each hit is a **candidate, not a verdict** — read the code for each. Checks whose config key is absent skip silently.
-3. **Read by category.** For each changed file, read your stack's security references before judging. If the repo ships a `security-review` skill with stack-specific patterns (e.g. `examples/worker-brain/.claude/skills/security-review/` for Next.js + Firebase), use it.
+3. **Read by category.** For each changed file, read your stack's security references before judging. If the repo ships a `security-review` skill with stack-specific patterns (e.g. `examples/nextjs-firebase/.claude/skills/security-review/` for Next.js + Firebase), use it.
 4. **Report.** One finding per issue: severity + location `file:line` + what happens + fix. Sort by severity. If nothing is found, say so — don't invent findings.
 
 ## Severity → action SLA

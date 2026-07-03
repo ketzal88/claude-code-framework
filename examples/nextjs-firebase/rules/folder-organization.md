@@ -74,7 +74,7 @@ Candidatos ya identificados (TODO, crearlos cuando vuelvan a pedirse):
 - `export-client-month.ts --client=X` — paquete mensual desde `channel_snapshots`
 - `resync-yesterday-all.ts` — detecta y rellena D-1 faltante multi-cliente
 - `add-mcp-tool.ts` — genera las 2 definiciones (mcp-tools.ts + mcp-server) desde un schema único
-- `sync-framework.ts` — espejo `.claude/` → repo community (ketzal88/claude-code-framework)
+- `sync-framework.ts` — espejo `.claude/` → repo community (your-org/claude-code-framework)
 
 ## Regla general
 

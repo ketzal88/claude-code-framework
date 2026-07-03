@@ -34,19 +34,19 @@ saltearla en lo sustancial. El default para una charla normal es **liviano**.
 1. **Self-check de ratchets** de `code-quality-ratchets.md` (§pre-commit): tsc
    limpio, sin `any` nuevos, sin `console.error` en lib/api, sin código muerto,
    sin romper el contrato de diseño. Si tocaste algo testeado, correr ese test.
-2. **Commitear sin que Gabriel lo pida.** Al terminar trabajo sustancial, correr
+2. **Commitear sin que el operador lo pida.** Al terminar trabajo sustancial, correr
    la secuencia de `/commit-checkpoint` y commitear. Nunca cerrar un turno con
    working tree sucio sin explicitarlo (el Stop hook `stop-dirty-tree-guard.py`
    lo recuerda una vez). Si es WIP deliberado o deuda de otra sesión, decirlo.
 3. **Línea de estado git SIEMPRE al final del mensaje:**
    `Estado git: commiteado <sha corto> — N commit(s) listos para que pushees`
-   (o `sin cambios de código`). Gabriel no es developer: esa línea es todo lo
+   (o `sin cambios de código`). el operador no es developer: esa línea es todo lo
    que necesita para decidir pushear.
 4. **NUNCA ejecutar `git push` ni intentar bypasses** (`--no-verify`,
-   `SKIP_PREPUSH` para código). El deny es intencional: el push lo hace Gabriel
+   `SKIP_PREPUSH` para código). El deny es intencional: el push lo hace el operador
    a mano, siempre. Un worktree/branch que deba llegar a main se mergea
    fast-forward local a main y se reporta — jamás se pushea. (Excepción única:
-   Gabriel lo pide explícitamente en el chat → `ALLOW_CLAUDE_PUSH=1`.)
+   el operador lo pide explícitamente en el chat → `ALLOW_CLAUDE_PUSH=1`.)
 
 Esto lo hace Claude por default — no espera que el usuario lo pida.
 

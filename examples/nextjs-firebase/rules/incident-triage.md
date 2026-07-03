@@ -1,6 +1,6 @@
 # Triage de incidentes — protocolo + diccionario de errores conocidos
 
-14 sesiones de la auditoría 2026-07 arrancaron con Gabriel pegando texto crudo
+14 sesiones de la auditoría 2026-07 arrancaron con el operador pegando texto crudo
 (Slack de crons, logs de Vercel, mails de GitHub, issues de Sentry) y varios
 turnos de reconstrucción de contexto — incluyendo errores YA diagnosticados
 antes. Esta regla corta ese ciclo.
@@ -30,7 +30,7 @@ antes. Esta regla corta ese ciclo.
 | `Apify API error 402: not-enough-usage-to-run-paid-actor` / `403 platform-feature-disabled` | Free tier del pool Apify agotado | Ver `getApifyUsageByAccount` (src/lib/scrapping/apify-tokens.ts); sumar token a `APIFY_EXTRA_TOKENS`; el candado pool-aware saltea el scan — no es bug del cron |
 | Meta `Application request limit reached` (#17, #80004) | Rate limit de la Marketing API | Esperar la ventana (no reintentar en loop); si es sync masivo, chunkear por cuenta |
 | Meta `#200` en portal OAuth | Permisos: la app necesita `ads_read` en Advanced Access + app Live | memoria reference_portal_meta_oauth_scope |
-| `AUTH_REVOKED` / 401 en Shopify o TN | Token caído — el cliente desinstaló o rotó credenciales | Avisar a Gabriel para re-OAuth del cliente afectado (caso Blunua: 2 semanas sin sync). TN 404 "Last page is 0" NO es esto — es respuesta benigna de página vacía |
+| `AUTH_REVOKED` / 401 en Shopify o TN | Token caído — el cliente desinstaló o rotó credenciales | Avisar a el operador para re-OAuth del cliente afectado (caso ClientA: 2 semanas sin sync). TN 404 "Last page is 0" NO es esto — es respuesta benigna de página vacía |
 | Notion `validation ... select option does not exist` | La opción/propiedad no existe en la DB de Notion (schema cambió) | Revisar la DB en Notion; el código debe degradar elegante, no romper |
 | Firestore `The query requires an index` | Falta índice compuesto | Agregarlo a `firestore.indexes.json` + `/deploy-indexes` — NUNCA crearlo desde el link de la consola |
 | `firebase login --reauth` / credentials no longer valid | Vía equivocada (CLI interactivo) | Usar la vía service-account: `npx tsx --require ./scripts/load-env.cjs` (ver windows-environment.md) |

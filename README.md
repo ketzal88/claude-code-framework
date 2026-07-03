@@ -2,7 +2,7 @@
 
 A layered enforcement system for Claude Code that works with **any language or framework**.
 Three layers: a universal `core/` that reads a per-project `stack.json` manifest, a reference
-example for TypeScript/Next.js/Firebase ([Worker Brain](examples/worker-brain/)), and a security
+example for TypeScript/Next.js/Firebase ([ExampleApp](examples/nextjs-firebase/)), and a security
 layer (secret-scan, blocking pre-push gate, SAST, dep-audit) driven entirely by the manifest.
 
 ---
@@ -14,7 +14,7 @@ layer (secret-scan, blocking pre-push gate, SAST, dep-audit) driven entirely by 
 3. [stack.json — The Manifest](#stackjson--the-manifest)
 4. [Security Layer](#security-layer)
 5. [Core Layer](#core-layer)
-6. [Worker Brain Reference Example](#worker-brain-reference-example)
+6. [ExampleApp Reference Example](#nextjs-firebase-reference-example)
 7. [Adopting This Framework](#adopting-this-framework)
 
 ---
@@ -42,15 +42,17 @@ Universal gate  ──reads──►  stack.json  ──runs──►  the comma
 |---|---|---|
 | **Core** | `core/` | Language-agnostic rules, command templates, hook scripts, security layer. Zero hardcoded tool names. |
 | **Manifest** | `stack.json` | Per-project configuration. The only file an adopter must write. |
-| **Reference** | `examples/worker-brain/` | Faithful mirror of a real production TypeScript/Next.js/Firebase setup. |
+| **Reference** | `examples/nextjs-firebase/` | Faithful mirror of a real production TypeScript/Next.js/Firebase setup. |
 
 ### Repository Structure
 
 ```
 claude-code-framework/
 ├─ README.md
+├─ VERSION / CHANGELOG.md     # adopters re-copy core/ to update
 ├─ stack.schema.json          # validates any stack.json
 ├─ stack.example.json         # blank template
+├─ .github/workflows/ci.yml   # compile + guard tests + doc-sync + schema validation
 ├─ core/
 │  ├─ CLAUDE.template.md      # brain template with {{placeholders}}
 │  ├─ rules/
@@ -60,11 +62,14 @@ claude-code-framework/
 │  │  ├─ commands-encode-workflows.md
 │  │  ├─ close-protocol.md            # how every substantial turn must end
 │  │  ├─ environment-canonical.md     # one true path per operation, enforced
-│  │  └─ incident-triage.md           # protocol + living error dictionary
+│  │  ├─ incident-triage.md           # protocol + living error dictionary
+│  │  └─ learning-loop.md             # persistent memory that actually persists
 │  ├─ commands/
 │  │  ├─ commit-checkpoint.md
 │  │  ├─ ci-simulate.md
 │  │  ├─ typecheck.md
+│  │  ├─ env-check.md
+│  │  └─ security-review.md
 │  └─ hooks/
 │     ├─ settings.template.json
 │     └─ scripts/
@@ -78,14 +83,20 @@ claude-code-framework/
 ├─ core/security/
 │  ├─ secret-patterns.txt
 │  └─ README.md               # SAST adapter docs
+├─ scripts/
+│  ├─ sync-example.py         # 1-command mirror update from a real project (sanitizing)
+│  └─ check-doc-sync.py       # the framework's own doc-sync gate (runs in CI)
+├─ tests/
+│  └─ test-core-guards.py     # dependency-free smoke suite for the hook guards
 └─ examples/
-   └─ worker-brain/
+   └─ nextjs-firebase/
       ├─ stack.json             # fully-filled TypeScript/Next.js/Firebase manifest
-      ├─ settings.json          # real .claude/settings.json (verbatim)
-      ├─ rules/                 # 9 domain rules (verbatim from production)
-      ├─ commands/              # 15 slash commands (verbatim from production)
+      ├─ settings.json          # production .claude/settings.json (anonymized)
+      ├─ sync-manifest.json     # file map + sanitization rules for sync-example.py
+      ├─ rules/                 # 12 domain rules (anonymized from production)
+      ├─ commands/              # 15 slash commands (anonymized from production)
       ├─ ast-rules/             # optional TypeScript ast-grep rules
-      └─ scripts/               # 4 production scripts
+      └─ scripts/               # 13 production scripts (guards, checkers, dev-up)
 ```
 
 ---
@@ -200,7 +211,7 @@ patterns (`.md`, `.claude/**`, `docs/**`, `.gitignore`). Rejected for any code c
 
 ### Structural Ratchet (sentrux)
 
-[sentrux](https://github.com/ketzal88/sentrux) is a **structural-regression ratchet**, not a SAST
+[sentrux](https://github.com/your-org/sentrux) is a **structural-regression ratchet**, not a SAST
 scanner. It runs as the last step of the pre-push gate (`ratchets.structural` in `stack.json`),
 comparing the codebase against a committed baseline (`ratchets.baselineDir/baseline.json`).
 If the structural metric regressed vs the baseline, the push is blocked.
@@ -269,10 +280,10 @@ the value (JSON for arrays/objects). Missing key → exit 1 = safe skip for call
 
 ---
 
-## Worker Brain Reference Example
+## ExampleApp Reference Example
 
-`examples/worker-brain/` is a **verbatim mirror** of the `.claude/` directory running in
-production in the Worker Brain SaaS (TypeScript/Next.js 14/Firebase/Vercel).
+`examples/nextjs-firebase/` is a **verbatim mirror** of the `.claude/` directory running in
+production in the ExampleApp SaaS (TypeScript/Next.js 14/Firebase/Vercel).
 Use it as the definitive reference for a fully-adopted setup.
 
 ### Contents

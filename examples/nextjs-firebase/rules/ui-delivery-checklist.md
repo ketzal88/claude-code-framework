@@ -1,7 +1,7 @@
 # Entrega de UI — checklist determinístico + receta de smoke test
 
 El patrón más caro detectado en la auditoría 2026-07 (20 sesiones): declarar UI
-"lista" sin verificarla, y que el QA lo termine haciendo Gabriel a mano, defecto
+"lista" sin verificarla, y que el QA lo termine haciendo el operador a mano, defecto
 por defecto. El Stop hook `scripts/stop-ui-smoke-guard.py` bloquea el cierre si
 se tocaron `.tsx` de UI sin ninguna llamada Playwright en la sesión. Esta regla
 documenta QUÉ verificar y CÓMO hacerlo barato.

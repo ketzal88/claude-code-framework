@@ -160,21 +160,21 @@ def main():
         return 0
 
     # ── Push interceptor (close-protocol) ────────────────────────────────
-    # El push es SIEMPRE de Gabriel (deny intencional en settings.local.json).
+    # El push es SIEMPRE de el operador (deny intencional en settings.local.json).
     # Cortar aca, ANTES de quemar 300s de checks en un push que igual va a ser
     # denegado, y sin excepcion para --no-verify (era el bypass que el agente
     # intentaba). Cierre correcto: commit local + linea final
     # "commiteado: <sha> - N commits listos para push".
-    # Excepcion explicita: ALLOW_CLAUDE_PUSH=1 (Gabriel lo pide en el chat)
+    # Excepcion explicita: ALLOW_CLAUDE_PUSH=1 (el operador lo pide en el chat)
     # -> se corre la suite completa de checks de abajo antes de permitirlo.
     allow_push = os.environ.get("ALLOW_CLAUDE_PUSH") == "1" or "ALLOW_CLAUDE_PUSH=1" in cmd
     if not allow_push:
         sys.stderr.write(
-            "[close-protocol] git push bloqueado: el push lo hace Gabriel a mano, siempre.\n"
+            "[close-protocol] git push bloqueado: el push lo hace el operador a mano, siempre.\n"
             "  No reintentes ni uses bypasses (--no-verify / SKIP_PREPUSH).\n"
             "  Cierre correcto: commitea local y termina tu mensaje con\n"
             "  'commiteado: <sha corto> - N commit(s) listos para push'.\n"
-            "  Si Gabriel pidio explicitamente que pushees: ALLOW_CLAUDE_PUSH=1 git push ...\n"
+            "  Si el operador pidio explicitamente que pushees: ALLOW_CLAUDE_PUSH=1 git push ...\n"
         )
         return 2
 

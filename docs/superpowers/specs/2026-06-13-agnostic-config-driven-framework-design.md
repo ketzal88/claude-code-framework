@@ -2,17 +2,17 @@
 
 **Date:** 2026-06-13
 **Status:** Design approved, pending spec review
-**Author:** Gabriel + Claude
+**Author:** the operator + Claude
 
 ---
 
 ## 1. Problem & Context
 
-`ketzal88/claude-code-framework` started as the documented Claude Code setup for **Worker Brain**, a production Next.js 14 + Firebase + TypeScript SaaS. It has real value — a layered enforcement system (rules → commands → AST → hooks → ratchets), an auto-routing operating procedure, blocking security/quality gates — but it has **two problems**:
+`your-org/claude-code-framework` started as the documented Claude Code setup for **ExampleApp**, a production Next.js 14 + Firebase + TypeScript SaaS. It has real value — a layered enforcement system (rules → commands → AST → hooks → ratchets), an auto-routing operating procedure, blocking security/quality gates — but it has **two problems**:
 
 1. **It is technology-coupled.** Everything assumes TypeScript / Next.js / Firebase: `tsc`, `eslint`, `knip`, ast-grep TS patterns, Firestore conventions, commands like `/ts-check` and `/deploy-indexes`. A Java, Python, or Go project cannot adopt it without rewriting the internals.
 
-2. **It has drifted from the real setup.** The published repo is a hand-generalized *snapshot* that is now stale and partial versus the `.claude/` directory actually running in the Worker Brain repo (the one that "works great"). Concrete evidence:
+2. **It has drifted from the real setup.** The published repo is a hand-generalized *snapshot* that is now stale and partial versus the `.claude/` directory actually running in the ExampleApp repo (the one that "works great"). Concrete evidence:
    - Published rules: `pure-engine-pattern`, `error-reporting-pattern`, `optional-fields-migration`, `ci-zero-failure`, `code-quality-ratchets`, `cron-security`, `operating-procedure`.
    - Real ai-analyzer rules: `alert-engine-pattern`, `console-error-pattern`, `firestore-conventions`, `regional-thresholds`, `folder-organization`, `cron-security`, `operating-procedure`, `code-quality-ratchets`, `ci-zero-failure`.
    - Published commands: 6. Real commands: ~16.
@@ -22,7 +22,7 @@
 
 So this rewrite has **two dimensions**:
 
-- **Fidelity** — the framework must honestly reflect what actually runs in Worker Brain today.
+- **Fidelity** — the framework must honestly reflect what actually runs in ExampleApp today.
 - **Agnosticism** — that captured setup must become portable to any language via configuration, not code edits.
 
 ---
@@ -33,7 +33,7 @@ So this rewrite has **two dimensions**:
 - A **universal core** (`core/`) that is 100% language-agnostic.
 - A single **manifest** (`stack.json`) per project that declares language + tool commands; universal hooks/commands read it instead of hardcoding `tsc`/`knip`/etc.
 - A first-class, named **Security Layer** (secret-scan, blocking pre-push gate, SAST, dep-audit) — resolving the "are the security gates here?" gap and giving `sentrux` a real home as the recommended SAST adapter.
-- `examples/worker-brain/` as a **faithful, current mirror** of the real `.claude/` setup, with a fully-filled `stack.json` — the proof the framework reflects a setup that works.
+- `examples/nextjs-firebase/` as a **faithful, current mirror** of the real `.claude/` setup, with a fully-filled `stack.json` — the proof the framework reflects a setup that works.
 - A community-facing, language-neutral **README** + `docs/adoption.md`.
 - Fix the documentation bugs discovered (notably the "advisory" vs "blocking" pre-push description).
 
@@ -58,7 +58,7 @@ Three layers:
 
 1. **`core/`** — language-agnostic. Rules (philosophy + invariants), command templates, hook scripts, security layer. Parameterized only through the manifest.
 2. **`stack.json`** — the per-project manifest. The *only* file an adopter must author. Declares language label, package manager, the command for each gate, security tools, ratchet tools, and path globs.
-3. **`examples/worker-brain/`** — a faithful mirror of the real Worker Brain `.claude/` setup, including a complete `stack.json`. Domain rules, domain commands, and the TS ast-grep rules live here as a worked reference.
+3. **`examples/nextjs-firebase/`** — a faithful mirror of the real ExampleApp `.claude/` setup, including a complete `stack.json`. Domain rules, domain commands, and the TS ast-grep rules live here as a worked reference.
 
 ### 3.1 The manifest (`stack.json`)
 
@@ -121,7 +121,7 @@ claude-code-framework/
 │     ├─ secret-patterns.txt       # PEM/AWS/Slack/Anthropic/OpenAI/Meta/etc.
 │     └─ README.md                 # how to plug sentrux / semgrep / bandit / gosec
 ├─ examples/
-│  └─ worker-brain/          # faithful mirror of the REAL .claude/ (the "anda joya" reference)
+│  └─ nextjs-firebase/          # faithful mirror of the REAL .claude/ (the "anda joya" reference)
 │     ├─ stack.json           # fully-filled TS/Next/Firebase manifest
 │     ├─ rules/               # firestore-conventions, alert-engine-pattern, cron-security,
 │     │                       #   console-error-pattern, regional-thresholds, folder-organization
@@ -147,7 +147,7 @@ A named layer rather than scattered hooks. Directly answers the user's question 
 | **SAST (optional, one-shot)** | `sast-scan.sh` runs `security.sast` when set | ✅ Gate universal; tool is the adapter | configurable |
 | **dep-audit** | runs `security.depAudit` | ✅ universal; per-language command | configurable |
 
-- **sentrux is a structural-regression ratchet, not a one-shot SAST.** In the real Worker Brain setup it runs as the 7th step *inside* `pre-push-quality-guard.py` — `sentrux gate <root>` diffed against `.sentrux/baseline.json`, opt-in via `SENTRUX_BIN` (default `C:\tmp\sentrux\sentrux.exe`), skipping silently when the binary or baseline is missing. It therefore belongs to the **ratchet family** (same "baseline is the floor / skip if unconfigured" semantics as dead-code/design/any), modeled as `ratchets.structural` and listed as a `gates.prePush.steps` entry. It is **not** wired through `security.sast`.
+- **sentrux is a structural-regression ratchet, not a one-shot SAST.** In the real ExampleApp setup it runs as the 7th step *inside* `pre-push-quality-guard.py` — `sentrux gate <root>` diffed against `.sentrux/baseline.json`, opt-in via `SENTRUX_BIN` (default `C:\tmp\sentrux\sentrux.exe`), skipping silently when the binary or baseline is missing. It therefore belongs to the **ratchet family** (same "baseline is the floor / skip if unconfigured" semantics as dead-code/design/any), modeled as `ratchets.structural` and listed as a `gates.prePush.steps` entry. It is **not** wired through `security.sast`.
 - The generic `security.sast` slot stays empty by default and exists for projects that want a separate one-shot scanner — `semgrep` / `bandit` / `gosec` documented as options in `core/security/README.md`.
 - The agnostic `secret-scan.sh` is the existing `check-no-secrets.sh` generalized (filename checks + staged-diff pattern checks).
 - The blocking pre-push guard generalizes `pre-push-quality-guard.py`: instead of hardcoding the CI steps, it iterates `gates.prePush.steps` and runs the corresponding manifest command/ratchet for each. Bypass `SKIP_PREPUSH=1` preserved.
@@ -168,15 +168,15 @@ Every hook and command becomes a thin manifest-reader: it asks `read-config` for
 
 ## 6. Fidelity step (capturing the real setup)
 
-Before/while extracting the agnostic core, reconcile the framework with the **actual** Worker Brain `.claude/` (source of truth: `c:\Users\gabri\Documents\Worker\Webs\ai-analyzer\.claude\` + `scripts/`):
+Before/while extracting the agnostic core, reconcile the framework with the **actual** ExampleApp `.claude/` (source of truth: `c:\Users\gabri\Documents\Worker\Webs\ai-analyzer\.claude\` + `scripts/`):
 
-- Bring `examples/worker-brain/rules/` to the real, current rule set (not the stale generalized names).
-- Bring `examples/worker-brain/commands/` to the real ~16 commands.
+- Bring `examples/nextjs-firebase/rules/` to the real, current rule set (not the stale generalized names).
+- Bring `examples/nextjs-firebase/commands/` to the real ~16 commands.
 - Reflect the real hooks (blocking secret-scan, blocking pre-push mirroring CI, dead-code + design Stop ratchets, doc-sync, use-client check, any-ratchet, error-reporting check).
 - Model `sentrux` correctly in the example manifest: a `ratchets.structural` entry run as a pre-push step (`sentrux gate` vs `.sentrux/baseline.json`), opt-in via `SENTRUX_BIN`, skipping silently when unconfigured — **not** a `security.sast` scan.
 - Fix every doc statement that misrepresents reality. Known bugs to correct (audit the whole README hook section, do not stop at these): (a) pre-push gate described as "advisory" when it is **blocking** (`PreToolUse`, exit 2); (b) secret-scan described as `PostToolUse` when it is **`PreToolUse`** (PostToolUse can never catch staged secrets — `git diff --cached` is already empty); (c) stale hook count and command count.
 
-`examples/worker-brain/` is the regression test for fidelity: if it diverges from the real `.claude/`, the framework is lying.
+`examples/nextjs-firebase/` is the regression test for fidelity: if it diverges from the real `.claude/`, the framework is lying.
 
 ---
 
@@ -184,8 +184,8 @@ Before/while extracting the agnostic core, reconcile the framework with the **ac
 
 The published repo is now cloned at `c:\tmp\framework-update\repo`.
 
-1. **Carve layers** — split current `examples/.claude/` into `core/` (universal) and `examples/worker-brain/` (domain). Mostly file moves + renames.
-2. **Author the manifest** — `stack.schema.json`, `stack.example.json`, and the worker-brain `stack.json` filled from reality.
+1. **Carve layers** — split current `examples/.claude/` into `core/` (universal) and `examples/nextjs-firebase/` (domain). Mostly file moves + renames.
+2. **Author the manifest** — `stack.schema.json`, `stack.example.json`, and the nextjs-firebase `stack.json` filled from reality.
 3. **Generalize scripts** — rewrite `secret-scan.sh`, `pre-push-guard.py`, `ratchet-guard.py`, `sast-scan.sh` to read the manifest via `read-config`; remove hardcoded TS tool names from `core/`.
 4. **Rewrite hooks** — `core/hooks/settings.template.json` wired to the generic scripts; reminders parameterized by `paths`.
 5. **Security layer** — assemble `core/security/` (patterns + adapter README), wire `sentrux` in the example.
@@ -202,7 +202,7 @@ Each phase is independently reviewable. No phase ships a `core/` file that names
 |---|---|
 | `read-config` becomes fragile/magic | Keep it <30 lines, missing-key = safe skip, ship unit tests against a fixture manifest |
 | Cross-platform shell (Windows/bash) | Hooks already use Python one-liners; keep Python as the portable layer, `jq` optional |
-| Example drifts from real setup again | Treat `examples/worker-brain/` as a mirror with a documented source-of-truth path; future updates sync from ai-analyzer |
+| Example drifts from real setup again | Treat `examples/nextjs-firebase/` as a mirror with a documented source-of-truth path; future updates sync from ai-analyzer |
 | Over-abstraction hurts readability | Manifest swaps **commands only**; structural/language-specific content stays out of core, documented as opt-in |
 
 ---
@@ -212,5 +212,5 @@ Each phase is independently reviewable. No phase ships a `core/` file that names
 1. A Java/Python/Go project can adopt the framework by copying `core/` and writing a `stack.json` — zero edits to hooks or commands.
 2. `core/` contains **no** hardcoded language-specific tool name (`tsc`, `knip`, `firestore`, etc.).
 3. The Security Layer runs secret-scan (blocking), pre-push (blocking), and SAST driven entirely by the manifest.
-4. `examples/worker-brain/stack.json` + rules + commands faithfully reflect the real `.claude/` setup that runs today.
+4. `examples/nextjs-firebase/stack.json` + rules + commands faithfully reflect the real `.claude/` setup that runs today.
 5. README is language-neutral, documents the manifest + adoption + security layer, and contains no statement contradicted by reality.

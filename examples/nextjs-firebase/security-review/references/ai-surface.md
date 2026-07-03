@@ -1,6 +1,6 @@
 # Superficie AI / MCP — el riesgo nuevo
 
-Worker Brain mete texto de terceros en prompts a Claude/Gemini y expone tools vía MCP. Esto agrega
+ExampleApp mete texto de terceros en prompts a Claude/Gemini y expone tools vía MCP. Esto agrega
 clases de riesgo que un skill genérico de seguridad no cubre: prompt injection, abuso de costo, SSRF,
 y acciones privilegiadas disparadas por output del modelo.
 
@@ -14,7 +14,7 @@ y acciones privilegiadas disparadas por output del modelo.
 
 ## <a id="mcp"></a>Gate del MCP
 
-`isAllowedMcpEmail(email)` (`@/lib/mcp-allowlist`): `@worker.ar` + CSV `MCP_EXTRA_ALLOWED_EMAILS`. Se
+`isAllowedMcpEmail(email)` (`@/lib/mcp-allowlist`): `@example.com` + CSV `MCP_EXTRA_ALLOWED_EMAILS`. Se
 enforça en **tres** puntos (authorize, callback, mcp-server) — un cambio que toca el acceso al MCP debe
 mantener los tres en sync; la política vive centralizada a propósito. Bug a buscar: un tool MCP nuevo
 expuesto sin pasar por el gate, o un cuarto punto de entrada que no lo chequea.

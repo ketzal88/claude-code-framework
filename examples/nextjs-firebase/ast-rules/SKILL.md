@@ -1,13 +1,13 @@
 ---
-name: worker-brain-ast-rules
-description: Structural AST enforcement of Worker Brain architectural invariants via ast-grep.
+name: nextjs-firebase-ast-rules
+description: Structural AST enforcement of ExampleApp architectural invariants via ast-grep.
 ---
 
 # AST Rules
 
-Run: `bash examples/worker-brain/ast-rules/scan.sh`
+Run: `bash examples/nextjs-firebase/ast-rules/scan.sh`
 
-These rules enforce the invariants documented in `examples/worker-brain/rules/`.
+These rules enforce the invariants documented in `examples/nextjs-firebase/rules/`.
 They require [ast-grep](https://ast-grep.github.io/) to be installed.
 
 | Rule | Severity | Catches |
@@ -16,7 +16,7 @@ They require [ast-grep](https://ast-grep.github.io/) to be installed.
 | `cron-requires-auth` | error | Cron route missing `validateCronSecret` reference |
 
 When to add a new rule:
-1. The invariant is already documented in `examples/worker-brain/rules/*.md`
+1. The invariant is already documented in `examples/nextjs-firebase/rules/*.md`
 2. You've seen it violated at least once
 3. The violation is structural (code shape), not semantic (logic)
 

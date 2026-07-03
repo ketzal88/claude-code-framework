@@ -2,7 +2,7 @@
 """Stop hook (close-protocol): avisa UNA vez si el turno cierra con codigo sin commitear.
 
 Friccion que ataca (auditoria 2026-07, 16 sesiones): Claude termina el
-trabajo pero no commitea ni reporta estado, y Gabriel persigue con
+trabajo pero no commitea ni reporta estado, y el operador persigue con
 "comiteaste?". El cierre correcto de trabajo sustancial es: correr la
 secuencia de /commit-checkpoint, commitear, y terminar el mensaje con
 "commiteado: <sha corto> - N commit(s) listos para push".
@@ -79,7 +79,7 @@ def main():
         "\nAntes de cerrar, elegi UNA:\n"
         "  a) Es trabajo tuyo terminado -> corre la secuencia de /commit-checkpoint,\n"
         "     commitea, y termina el mensaje con 'commiteado: <sha> - N commit(s)\n"
-        "     listos para push'. NUNCA hagas git push (es de Gabriel).\n"
+        "     listos para push'. NUNCA hagas git push (es de el operador).\n"
         "  b) Es WIP deliberado o deuda de OTRA sesion -> decilo explicitamente en\n"
         "     tu mensaje final (que archivos y por que quedan sin commitear) y cerra.\n"
         "\nEste aviso aparece una sola vez por cierre. Bypass: SKIP_COMMITCHECK=1.\n"

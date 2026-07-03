@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-commit secret scanner for Worker Brain.
+# Pre-commit secret scanner for ExampleApp.
 # Exits non-zero if staged files contain likely secrets.
 # Usage: called from .claude/settings.json PreToolUse hook on `git commit`.
 

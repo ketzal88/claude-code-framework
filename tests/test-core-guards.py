@@ -3,7 +3,7 @@
 
     python tests/test-core-guards.py
 
-Uses examples/worker-brain/ as the stack.json fixture (it configures
+Uses examples/nextjs-firebase/ as the stack.json fixture (it configures
 environment.forbiddenCommands, gates.push=operator-only and
 gates.closeProtocol=blocking). No external deps.
 """
@@ -14,7 +14,7 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CORE = os.path.join(REPO, "core", "hooks", "scripts")
-FIXTURE = os.path.join(REPO, "examples", "worker-brain")   # has stack.json
+FIXTURE = os.path.join(REPO, "examples", "nextjs-firebase")   # has stack.json
 NO_MANIFEST = os.path.dirname(REPO)                         # parent dir: no stack.json upward (best effort)
 
 ENV = {k: v for k, v in os.environ.items()

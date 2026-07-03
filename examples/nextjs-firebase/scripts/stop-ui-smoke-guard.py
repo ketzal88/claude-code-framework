@@ -3,7 +3,7 @@
 
 Friccion que ataca (auditoria 2026-07, 20 sesiones — la mas cara): Claude
 declara superficies "listas" sin haberlas corrido en browser, y el QA lo
-termina haciendo Gabriel a mano, defecto por defecto. La regla de memoria
+termina haciendo el operador a mano, defecto por defecto. La regla de memoria
 (feedback_always_playwright_before_delivery) es prosa; este gate la vuelve
 determinista, igual que el dead-code guard.
 
