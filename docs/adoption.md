@@ -15,10 +15,12 @@ cp -r core/ your-project/.claude/core/
 `core/` is entirely language-agnostic. No edits needed.
 It contains:
 - `CLAUDE.template.md` — brain template with `{{placeholders}}`
-- `rules/` — 4 universal rules
-- `commands/` — 4 universal slash commands
+- `rules/` — 7 universal rules (operating-procedure, ratchet-philosophy, security-gates, commands-encode-workflows, close-protocol, environment-canonical, incident-triage)
+- `commands/` — 5 universal slash commands
 - `hooks/` — hook scripts and settings template
 - `security/` — secret patterns and SAST adapter docs
+
+Sanity-check the hook guards anytime with `python tests/test-core-guards.py`.
 
 ---
 
