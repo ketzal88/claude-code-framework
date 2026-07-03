@@ -60,16 +60,19 @@ def main():
         return 0
 
     code_exts = (".ts", ".tsx", ".js", ".cjs", ".mjs", ".json")
-    has_code_changes = any(
-        line[3:].strip().strip('"').endswith(code_exts)
+    changed_paths = [
+        line[3:].strip().strip('"').replace("\\", "/")
         for line in changed_lines
         if len(line) > 3
-    )
-    if not has_code_changes:
+    ]
+    changed_code = [p for p in changed_paths if p.endswith(code_exts)]
+    if not changed_code:
         return 0
 
-    # Run the ratchet. Never block on tooling failures — only on real
-    # regressions.
+    # Run the ratchet. CHANGED_FILES scopes the block to files THIS session
+    # touched — inherited debt from other sessions' WIP downgrades to a
+    # warning inside the checker (CI still enforces the global floor).
+    # Never block on tooling failures — only on real regressions.
     try:
         result = subprocess.run(
             ["node", "scripts/check-dead-code-baseline.js"],
@@ -78,6 +81,7 @@ def main():
             encoding="utf-8",
             errors="replace",
             timeout=RATCHET_TIMEOUT_SEC,
+            env={**os.environ, "CHANGED_FILES": "\n".join(changed_paths)},
         )
     except subprocess.TimeoutExpired:
         sys.stderr.write(

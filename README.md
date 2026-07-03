@@ -57,7 +57,10 @@ claude-code-framework/
 │  │  ├─ operating-procedure.md
 │  │  ├─ ratchet-philosophy.md
 │  │  ├─ security-gates.md
-│  │  └─ commands-encode-workflows.md
+│  │  ├─ commands-encode-workflows.md
+│  │  ├─ close-protocol.md            # how every substantial turn must end
+│  │  ├─ environment-canonical.md     # one true path per operation, enforced
+│  │  └─ incident-triage.md           # protocol + living error dictionary
 │  ├─ commands/
 │  │  ├─ commit-checkpoint.md
 │  │  ├─ ci-simulate.md
@@ -67,8 +70,10 @@ claude-code-framework/
 │     └─ scripts/
 │        ├─ read-config.py       # manifest reader — heart of config-driven
 │        ├─ secret-scan.sh       # agnostic regex secret scanner
-│        ├─ pre-push-guard.py    # reads gates.prePush.steps; BLOCKING
-│        ├─ ratchet-guard.py     # generic baseline ratchet (Stop hook)
+│        ├─ pre-push-guard.py    # gates.prePush.steps + gates.push=operator-only; BLOCKING
+│        ├─ ratchet-guard.py     # generic baseline ratchet (Stop hook) + CHANGED_FILES scope
+│        ├─ canonical-guard.py   # blocks environment.forbiddenCommands with the fix inline
+│        ├─ close-guard.py       # close-protocol: uncommitted code at Stop reminds once
 │        └─ sast-scan.sh         # runs security.sast
 ├─ core/security/
 │  ├─ secret-patterns.txt
@@ -113,7 +118,15 @@ Start with one gate and expand.
   },
   "gates": {
     "preCommit": { "secretScan": "blocking" },
-    "prePush":   { "blocking": true, "steps": ["typecheck", "lint", "test"] }
+    "prePush":   { "blocking": true, "steps": ["typecheck", "lint", "test"] },
+    "push": "operator-only",
+    "closeProtocol": "blocking"
+  },
+  "environment": {
+    "forbiddenCommands": [
+      { "pattern": "(^|[;&|]\\s*)(npx\\s+)?eslint\\b",
+        "fix": "Global ESLint fails without eslint.config here. Use: npm run lint" }
+    ]
   },
   "paths": {
     "source": ["src/**"],
@@ -121,6 +134,16 @@ Start with one gate and expand.
   }
 }
 ```
+
+**Session-friction layer** (added 2026-07, from an audit of 100+ production sessions):
+`gates.push: "operator-only"` makes every agent `git push` block instantly with the correct
+close instruction (the push belongs to the human operator); `gates.closeProtocol: "blocking"`
+reminds once when a turn ends with uncommitted code; `environment.forbiddenCommands` blocks
+the commands that always fail on this machine with the fix inline (0-turn self-correction);
+and `ratchet-guard.py` now passes `CHANGED_FILES` so ratchet commands can block only on
+regressions the session itself introduced, downgrading inherited debt to a warning (CI still
+enforces the global floor). Rules: `core/rules/close-protocol.md`,
+`core/rules/environment-canonical.md`, `core/rules/incident-triage.md`.
 
 Validated by `stack.schema.json`. See `stack.example.json` for a blank template.
 

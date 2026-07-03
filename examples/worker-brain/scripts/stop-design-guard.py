@@ -61,16 +61,18 @@ def main():
     except Exception:
         return 0
 
-    has_tsx_changes = any(
-        line[3:].strip().strip('"').endswith(".tsx")
+    changed_paths = [
+        line[3:].strip().strip('"').replace("\\", "/")
         for line in changed_lines
         if len(line) > 3
-    )
+    ]
+    has_tsx_changes = any(p.endswith(".tsx") for p in changed_paths)
     if not has_tsx_changes:
         return 0
 
-    # Run the ratchet. Never block on tooling failures — only on real
-    # regressions.
+    # Run the ratchet. CHANGED_FILES scopes the block to files THIS session
+    # touched — inherited debt downgrades to a warning inside the checker
+    # (CI still enforces the global floor). Never block on tooling failures.
     try:
         result = subprocess.run(
             ["node", "scripts/check-design-baseline.js"],
@@ -79,6 +81,7 @@ def main():
             encoding="utf-8",
             errors="replace",
             timeout=RATCHET_TIMEOUT_SEC,
+            env={**os.environ, "CHANGED_FILES": "\n".join(changed_paths)},
         )
     except subprocess.TimeoutExpired:
         sys.stderr.write(

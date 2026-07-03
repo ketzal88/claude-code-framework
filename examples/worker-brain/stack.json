@@ -33,7 +33,29 @@
     "prePush": {
       "blocking": true,
       "steps": ["typecheck", "lint", "testAlerts", "test", "design", "cronDoc", "structural"]
-    }
+    },
+    "push": "operator-only",
+    "closeProtocol": "blocking"
+  },
+  "environment": {
+    "forbiddenCommands": [
+      {
+        "pattern": "(^|[;&|]\\s*)(npx\\s+)?eslint\\b",
+        "fix": "eslint directo falla aca (ESLint 9 global sin eslint.config). Usa: npm run lint | fix: npx next lint --fix"
+      },
+      {
+        "pattern": "\\bfirebase\\s+(login|deploy|firestore|use)\\b",
+        "fix": "El CLI de firebase pide login interactivo y muere headless. Usa la via service-account: npx tsx --require ./scripts/load-env.cjs scripts/..."
+      },
+      {
+        "pattern": "(^|[;&|(]\\s*)jq\\b|\\|\\s*jq\\b",
+        "fix": "jq no esta instalado. Usa: node -e con JSON.parse"
+      },
+      {
+        "pattern": "\\b(Select-Object|ForEach-Object|Get-ChildItem|Get-Content|Write-Host|Select-String|Test-Path)\\b|\\$env:",
+        "fix": "Eso es sintaxis PowerShell dentro del tool Bash. Usa el tool PowerShell, o sintaxis POSIX en Bash."
+      }
+    ]
   },
   "paths": {
     "source": ["src/**"],

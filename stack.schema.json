@@ -102,6 +102,36 @@
             }
           },
           "additionalProperties": false
+        },
+        "push": {
+          "type": "string",
+          "enum": ["operator-only"],
+          "description": "operator-only = the agent NEVER pushes (every git push blocks instantly with the close instruction, including --no-verify; --dry-run allowed). Explicit exception: ALLOW_CLAUDE_PUSH=1 runs the full prePush suite before allowing. Absent = agent pushes are gated by prePush steps only."
+        },
+        "closeProtocol": {
+          "type": "string",
+          "enum": ["blocking", "off"],
+          "description": "blocking = the close-guard Stop hook reminds ONCE when a turn ends with uncommitted code files: commit + report sha, or explicitly declare WIP. See core/rules/close-protocol.md. Absent/off = no reminder."
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "description": "Machine/environment canonical-path enforcement. See core/rules/environment-canonical.md.",
+      "properties": {
+        "forbiddenCommands": {
+          "type": "array",
+          "description": "Commands that ALWAYS fail on this machine. canonical-guard.py blocks them (exit 2) with the fix in the message. Precision over recall: the guard blocks, so anchor patterns to command position.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": { "type": "string", "description": "Regex tested against the raw Bash command." },
+              "fix": { "type": "string", "description": "The canonical alternative, shown verbatim to the agent." }
+            },
+            "required": ["pattern", "fix"],
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

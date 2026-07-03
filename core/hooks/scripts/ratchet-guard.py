@@ -62,11 +62,12 @@ def main():
     except Exception:
         return 0
 
-    has_code = any(
-        line[3:].strip().strip('"').endswith(CODE_EXTS)
+    changed_paths = [
+        line[3:].strip().strip('"').replace("\\", "/")
         for line in lines
         if len(line) > 3
-    )
+    ]
+    has_code = any(p.endswith(CODE_EXTS) for p in changed_paths)
     if not has_code:
         return 0
 
@@ -74,12 +75,18 @@ def main():
     if not ratchet_cmd:
         return 0
 
+    # Scope-by-diff contract: CHANGED_FILES (newline-separated, /-normalized)
+    # carries the files THIS session touched. A ratchet command MAY use it to
+    # block only on regressions in those files and downgrade inherited debt
+    # (another session's WIP) to a warning. CI runs the same command WITHOUT
+    # CHANGED_FILES and keeps strict global enforcement, so the floor holds.
     try:
         result = subprocess.run(
             ["bash", "-c", ratchet_cmd],
             capture_output=True, text=True,
             encoding="utf-8", errors="replace",
             timeout=TIMEOUT_SEC,
+            env={**os.environ, "CHANGED_FILES": "\n".join(changed_paths)},
         )
     except subprocess.TimeoutExpired:
         sys.stderr.write(

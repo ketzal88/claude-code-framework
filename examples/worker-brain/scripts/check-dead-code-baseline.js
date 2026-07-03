@@ -130,25 +130,44 @@ function main() {
 
     const totalDelta = current.total - baseline.total;
 
+    // Scope-by-diff (auditoría 2026-07): when the Stop hook passes the list of
+    // files THIS session touched (CHANGED_FILES, newline-separated, /-normalized),
+    // only regressions in those files BLOCK. Regressions inherited from other
+    // sessions' WIP downgrade to a warning — the global floor is still enforced
+    // by CI, which runs without CHANGED_FILES and keeps the strict behavior.
+    const changedEnv = process.env.CHANGED_FILES;
+    const changedSet = changedEnv
+        ? new Set(changedEnv.split("\n").map(f => f.trim().replace(/\\/g, "/")).filter(Boolean))
+        : null;
+    const own = changedSet ? regressed.filter(r => changedSet.has(r.file)) : regressed;
+    const inherited = changedSet ? regressed.filter(r => !changedSet.has(r.file)) : [];
+
     if (regressed.length > 0 || totalDelta > 0) {
-        process.stderr.write("\n");
-        process.stderr.write(`✗ dead-code ratchet FAILED\n`);
-        process.stderr.write(`  total: ${baseline.total} → ${current.total} (${totalDelta >= 0 ? "+" : ""}${totalDelta})\n`);
-        if (regressed.length > 0) {
-            process.stderr.write(`  files with new dead code:\n`);
-            regressed
-                .sort((a, b) => b.delta - a.delta)
-                .forEach(r => {
-                    process.stderr.write(`    ${r.file}: ${r.prev} → ${r.now} (+${r.delta})\n`);
-                });
+        const blocking = own.length > 0 || !changedSet;
+        const out = blocking ? process.stderr : process.stdout;
+        out.write("\n");
+        out.write(blocking ? `✗ dead-code ratchet FAILED\n` : `⚠ dead-code ratchet: solo deuda heredada (no bloquea)\n`);
+        out.write(`  total: ${baseline.total} → ${current.total} (${totalDelta >= 0 ? "+" : ""}${totalDelta})\n`);
+        if (own.length > 0) {
+            out.write(`  files with new dead code (regresión TUYA — bloquea):\n`);
+            own.sort((a, b) => b.delta - a.delta)
+                .forEach(r => out.write(`    ${r.file}: ${r.prev} → ${r.now} (+${r.delta})\n`));
         }
-        process.stderr.write("\n");
-        process.stderr.write("  Fix: run `npx knip` to see per-file details, then either\n");
-        process.stderr.write("    - delete the orphan export/file/dep, OR\n");
-        process.stderr.write("    - wire it up to a real consumer if intentional.\n");
-        process.stderr.write("  If you cleaned up OTHER files and the total dropped, regenerate:\n");
-        process.stderr.write("    `npm run dead-code-baseline`\n\n");
-        process.exit(1);
+        if (inherited.length > 0) {
+            out.write(`  deuda heredada de otra sesión (warning, no bloquea acá; CI la enforcea):\n`);
+            inherited.sort((a, b) => b.delta - a.delta)
+                .forEach(r => out.write(`    ${r.file}: ${r.prev} → ${r.now} (+${r.delta})\n`));
+        }
+        out.write("\n");
+        if (blocking) {
+            out.write("  Fix: run `npx knip` to see per-file details, then either\n");
+            out.write("    - delete the orphan export/file/dep, OR\n");
+            out.write("    - wire it up to a real consumer if intentional.\n");
+            out.write("  If you cleaned up OTHER files and the total dropped, regenerate:\n");
+            out.write("    `npm run dead-code-baseline`\n\n");
+            process.exit(1);
+        }
+        process.exit(0);
     }
 
     if (totalDelta < 0) {
