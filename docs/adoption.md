@@ -58,11 +58,13 @@ cp .claude/core/hooks/settings.template.json .claude/settings.json
 ```
 
 The template pre-wires:
-- `PreToolUse` (Bash `git push`): `pre-push-guard.py` — **blocking**
+- `PreToolUse` (Bash): `canonical-guard.py` — **blocking** (reads `environment.forbiddenCommands`; no-op if absent)
+- `PreToolUse` (Bash `git push`): `pre-push-guard.py` — **blocking** (push policy + quality gate)
 - `PreToolUse` (Bash `git commit`): `secret-scan.sh` — **blocking**
-- `Stop`: `ratchet-guard.py` (dead-code ratchet) — **blocking**
+- `Stop`: `ratchet-guard.py` (dead-code ratchet, scope-by-diff) — **blocking**
+- `Stop`: `close-guard.py` (close protocol) — **blocking once** (no-op unless `gates.closeProtocol: "blocking"`)
 
-Both `PreToolUse` hooks run **before** the tool action completes, so they can
+All `PreToolUse` hooks run **before** the tool action completes, so they can
 actually block. The secret scan must be `PreToolUse` — `PostToolUse` fires after
 the commit is done and `git diff --cached` is already empty.
 
@@ -148,8 +150,9 @@ from alert scaffolding to Firestore index deploy to AI prompt versioning.
 ## Verification
 
 ```bash
-# Verify core has no hardcoded tool names
-grep -rIE 'tsc|knip|eslint|firestore' .claude/core/
+# Verify the executable core has no hardcoded tool names
+# (rules may cite tools as illustrative examples; the scripts never do)
+grep -rIE 'tsc|knip|eslint|firestore' .claude/core/hooks/scripts/
 # Must return empty
 
 # Verify read-config works

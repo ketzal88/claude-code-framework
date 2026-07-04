@@ -14,7 +14,7 @@ layer (secret-scan, blocking pre-push gate, SAST, dep-audit) driven entirely by 
 3. [stack.json — The Manifest](#stackjson--the-manifest)
 4. [Security Layer](#security-layer)
 5. [Core Layer](#core-layer)
-6. [ExampleApp Reference Example](#nextjs-firebase-reference-example)
+6. [ExampleApp Reference Example](#exampleapp-reference-example)
 7. [Adopting This Framework](#adopting-this-framework)
 
 ---
@@ -172,12 +172,14 @@ Validated by `stack.schema.json`. See `stack.example.json` for a blank template.
 
 ## Security Layer
 
-Four gates, driven entirely by `stack.json`. None are hardcoded — all adapt via the manifest.
+All gates are driven entirely by `stack.json`. None are hardcoded — all adapt via the manifest.
 
 | Gate | Hook Type | Blocking? | Manifest Key |
 |---|---|---|---|
 | **Secret scan** | `PreToolUse` (Bash `git commit`) | ✅ Yes — blocks the commit | `security.secretScan` |
+| **Push policy (operator-only)** | `PreToolUse` (Bash `git push`) | ✅ Yes — instant, incl. `--no-verify` | `gates.push` |
 | **Pre-push quality gate** | `PreToolUse` (Bash `git push`) | ✅ Yes — blocks the push | `gates.prePush.steps` |
+| **Canonical commands** | `PreToolUse` (Bash) | ✅ Yes — with the fix inline | `environment.forbiddenCommands` |
 | **Structural ratchet (sentrux)** | Pre-push step | ✅ Yes — as a step | `ratchets.structural` |
 | **SAST / dep-audit** | Configurable | Configurable | `security.sast` / `security.depAudit` |
 | **Security review (guided)** | On-demand (`/security-review`) | No — human/AI review | `security.review` |
@@ -243,10 +245,11 @@ command. See `core/security/README.md` for full adapter documentation.
 
 ## Core Layer
 
-`core/` is entirely language-agnostic. Verification:
+`core/` is entirely language-agnostic. Verification — the *executable* layer
+never hardcodes a tool name (rules may cite tools as illustrative examples):
 
 ```bash
-grep -rIE 'tsc|knip|eslint|firestore' core/
+grep -rIE 'tsc|knip|eslint|firestore' core/hooks/scripts/
 # Must return empty
 ```
 
@@ -256,8 +259,12 @@ grep -rIE 'tsc|knip|eslint|firestore' core/
 |---|---|
 | `operating-procedure.md` | Auto-router: triage by size (trivial → answer directly; substantial → apply sequence). Route-by-work-type table. |
 | `ratchet-philosophy.md` | “The baseline is the floor” contract. Skip conditions every ratchet must implement. |
-| `security-gates.md` | Canonical statement of all four security gates. Correct hook types (secret-scan = PreToolUse, pre-push = blocking). |
+| `security-gates.md` | Canonical statement of the security gates. Correct hook types (secret-scan = PreToolUse, pre-push = blocking). |
 | `commands-encode-workflows.md` | Commands are the implementation of auto-routing, not buttons humans press. |
+| `close-protocol.md` | How every substantial turn must end: commit + status line, never push (enforced by close-guard + push policy). |
+| `environment-canonical.md` | One true path per operation on this machine; `environment.forbiddenCommands` blocks the broken ones with the fix inline. |
+| `incident-triage.md` | Triage protocol + living error dictionary: never re-derive a solved diagnosis. |
+| `learning-loop.md` | Persistent memory that actually persists: project memory with index, post-run verification of headless automations. |
 
 ### core/commands/
 
@@ -271,8 +278,8 @@ grep -rIE 'tsc|knip|eslint|firestore' core/
 ### core/hooks/
 
 `core/hooks/settings.template.json` — copy to `.claude/settings.json`. Pre-wired:
-- `PreToolUse` (Bash): `pre-push-guard.py` (blocking) + `secret-scan.sh` (blocking on commit)
-- `Stop`: `ratchet-guard.py` (dead-code ratchet, blocking)
+- `PreToolUse` (Bash): `canonical-guard.py` (blocks `environment.forbiddenCommands` with the fix inline) + `pre-push-guard.py` (push policy + quality gate, blocking) + `secret-scan.sh` (blocking on commit)
+- `Stop`: `ratchet-guard.py` (dead-code ratchet, blocking, scope-by-diff via `CHANGED_FILES`) + `close-guard.py` (close protocol, reminds once)
 
 `core/hooks/scripts/read-config.py` — the manifest reader. Takes a dotted key path
 (e.g. `commands.typecheck`), walks up the directory tree to find `stack.json`, returns
@@ -282,22 +289,26 @@ the value (JSON for arrays/objects). Missing key → exit 1 = safe skip for call
 
 ## ExampleApp Reference Example
 
-`examples/nextjs-firebase/` is a **verbatim mirror** of the `.claude/` directory running in
-production in the ExampleApp SaaS (TypeScript/Next.js 14/Firebase/Vercel).
-Use it as the definitive reference for a fully-adopted setup.
+`examples/nextjs-firebase/` is an **anonymized mirror** of the `.claude/` directory running in
+production in a real SaaS (TypeScript/Next.js 15/Firebase/Vercel) — file-for-file identical,
+with company/client/person names replaced by generic placeholders.
+Use it as the definitive reference for a fully-adopted setup. To refresh it from the source
+project: `python scripts/sync-example.py <project-root> examples/nextjs-firebase`
+(the `sync-manifest.json` carries the file map, sanitization rules and a leak check).
 
 ### Contents
 
 | Path | Description |
 |---|---|
-| `stack.json` | Fully-filled manifest: 8 commands, sentrux as structural ratchet, design + cron-doc gates |
-| `settings.json` | Real `.claude/settings.json`: 2 blocking `PreToolUse` hooks, 6 advisory `PostToolUse` hooks, 2 blocking `Stop` hooks |
-| `rules/` | 9 domain rules (verbatim from production) |
-| `commands/` | 15 slash commands (verbatim from production) |
+| `stack.json` | Fully-filled manifest: 8 commands, sentrux as structural ratchet, design + cron-doc gates, `push: operator-only`, `closeProtocol: blocking`, 4 `forbiddenCommands` |
+| `settings.json` | Production `.claude/settings.json`: 3 blocking `PreToolUse` hooks, 6 advisory `PostToolUse` hooks, 4 blocking `Stop` hooks |
+| `rules/` | 12 domain rules (anonymized from production) |
+| `commands/` | 15 slash commands (anonymized from production) |
 | `ast-rules/` | TypeScript ast-grep rules — optional structural enforcement add-on |
-| `scripts/` | 4 production scripts (pre-push guard, dead-code ratchet, secret scan) |
+| `scripts/` | 13 production scripts (guards, baseline checkers, secret scan, dev-up) |
+| `sync-manifest.json` | File map + sanitization rules for `scripts/sync-example.py` |
 
-### Rules (9)
+### Rules (12)
 
 | Rule | Domain |
 |---|---|
@@ -308,8 +319,11 @@ Use it as the definitive reference for a fully-adopted setup.
 | `cron-security.md` | `validateCronSecret()` first, `withErrorReporting()` wrap, idempotency, maxDuration |
 | `firestore-conventions.md` | 4 doc ID patterns, ignoreUndefinedProperties, index drift prevention |
 | `folder-organization.md` | scripts/ subcategories, import path conventions |
-| `operating-procedure.md` | WB-specific routing (alert engines, cron, channel_snapshots, ARS currency) |
+| `operating-procedure.md` | App-specific routing (alert engines, cron, channel_snapshots, ARS currency) + close protocol |
 | `regional-thresholds.md` | ARS vs USD scale differences for ROAS/CPA/spend thresholds |
+| `windows-environment.md` | Canonical vs forbidden path per operation on the dev machine (lint, DB access, shell dialects) |
+| `ui-delivery-checklist.md` | Deterministic UI-delivery checklist (nav wiring, empty states, mirrors) + canonical smoke-test recipe |
+| `incident-triage.md` | Triage protocol + 11-row living dictionary of known errors (cause → fix) |
 
 ### Commands (15)
 
@@ -331,11 +345,12 @@ Use it as the definitive reference for a fully-adopted setup.
 | `/design-gate` | Enforce design-contract ratchet on UI changes |
 | `/fix-any` | Replace `any` types in a file with typed alternatives |
 
-### Hooks (settings.json — 10 total)
+### Hooks (settings.json — 13 total)
 
 | Event | Hook | Blocking? |
 |---|---|---|
-| `PreToolUse` (Bash `git push`) | `pre-push-quality-guard.py` | ✅ Yes (exit 2) |
+| `PreToolUse` (Bash) | `pre-bash-canonical-guard.py` (commands that always fail on this machine) | ✅ Yes (exit 2, fix inline) |
+| `PreToolUse` (Bash `git push`) | `pre-push-quality-guard.py` (push interceptor + quality gate) | ✅ Yes (exit 2) |
 | `PreToolUse` (Bash `git commit`) | `check-no-secrets.sh` | ✅ Yes (exit 1) |
 | `PostToolUse` (Edit/Write) | File-type reminders (alert engine / cron / indexes / service) | Advisory |
 | `PostToolUse` (Edit/Write) | `check-error-reporting.js` (API routes) | Advisory |
@@ -343,12 +358,15 @@ Use it as the definitive reference for a fully-adopted setup.
 | `PostToolUse` (Edit/Write) | `check-cron-doc-sync.js` (crons.yml sync) | Advisory |
 | `PostToolUse` (Edit/Write) | `use-client` directive check (React hooks) | Advisory |
 | `PostToolUse` (Edit/Write) | Critical utility change reminder | Advisory |
-| `Stop` | `stop-dead-code-guard.py` (dead-code ratchet) | ✅ Yes (exit 2) |
-| `Stop` | `stop-design-guard.py` (design-contract ratchet) | ✅ Yes (exit 2) |
+| `Stop` | `stop-ui-smoke-guard.py` (UI touched without a browser smoke test) | ✅ Yes (exit 2, once) |
+| `Stop` | `stop-dead-code-guard.py` (dead-code ratchet, scope-by-diff) | ✅ Yes (exit 2) |
+| `Stop` | `stop-design-guard.py` (design-contract ratchet, scope-by-diff) | ✅ Yes (exit 2) |
+| `Stop` | `stop-dirty-tree-guard.py` (close protocol: uncommitted code) | ✅ Yes (exit 2, once) |
 
-Both `PreToolUse` hooks are **blocking**: the pre-push guard exits 2 to abort the push;
-the secret scan exits 1 to abort the commit. Both `Stop` hooks exit 2 to force cleanup
-before Claude ends a turn.
+The three `PreToolUse` hooks are **blocking**. The `Stop` hooks exit 2 to force cleanup
+before Claude ends a turn; the smoke and dirty-tree guards block only once per close
+(`stop_hook_active` breaks the loop), and the two ratchet guards pass `CHANGED_FILES`
+so inherited debt from other sessions downgrades to a warning.
 
 ---
 
