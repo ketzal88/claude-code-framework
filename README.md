@@ -13,9 +13,10 @@ layer (secret-scan, blocking pre-push gate, SAST, dep-audit) driven entirely by 
 2. [Architecture](#architecture)
 3. [stack.json — The Manifest](#stackjson--the-manifest)
 4. [Security Layer](#security-layer)
-5. [Core Layer](#core-layer)
-6. [Worker Brain Reference Example](#worker-brain-reference-example)
-7. [Adopting This Framework](#adopting-this-framework)
+5. [Codebase Graph Layer](#codebase-graph-layer)
+6. [Core Layer](#core-layer)
+7. [Worker Brain Reference Example](#worker-brain-reference-example)
+8. [Adopting This Framework](#adopting-this-framework)
 
 ---
 
@@ -207,6 +208,33 @@ command. See `core/security/README.md` for full adapter documentation.
 
 ---
 
+## Codebase Graph Layer
+
+An optional, language-agnostic layer built on [graphify](https://github.com/Graphify-Labs/graphify):
+tree-sitter parses the codebase into a queryable knowledge graph of entities and their
+`imports`/`contains` edges. It answers "who uses this?", "how does A reach B?", and "where do I
+start?" via graph traversal instead of a file-by-file crawl.
+
+| Property | Value |
+|---|---|
+| **Token cost** | Zero — AST extraction is local, no LLM, no API key |
+| **Config** | **None** — tree-sitter covers 36+ languages, so it needs no `stack.json` |
+| **Setup** | `uv tool install graphifyy && graphify install` |
+| **Build / refresh** | `graphify update .` (gitignore `graphify-out/`) |
+| **Query** | `graphify explain "X"` (blast radius) · `path "A" "B"` (trace) · `query "..."` (orient) |
+
+Wiring: `core/commands/graphify.md` (usage), `core/rules/graphify.md` (when to consult, and the
+honest limits), `core/hooks/scripts/stop-graphify-refresh.py` (optional Stop hook that backgrounds a
+refresh after code-touching turns).
+
+**Two honest caveats.** (1) The graph is a map of *imports*, not *runtime dependencies* — it does not
+see HTTP calls, shared database tables, or event flows, so disconnected islands are usually real
+decoupling, not a bug. Orient with it, then read the real code. (2) It is **net token-positive on
+large exploration-heavy repos** but the aggressive auto-consult hooks add a small per-operation tax;
+on small repos where grep suffices, keep it on-demand rather than always-on.
+
+---
+
 ## Core Layer
 
 `core/` is entirely language-agnostic. Verification:
@@ -224,6 +252,7 @@ grep -rIE 'tsc|knip|eslint|firestore' core/
 | `ratchet-philosophy.md` | “The baseline is the floor” contract. Skip conditions every ratchet must implement. |
 | `security-gates.md` | Canonical statement of all four security gates. Correct hook types (secret-scan = PreToolUse, pre-push = blocking). |
 | `commands-encode-workflows.md` | Commands are the implementation of auto-routing, not buttons humans press. |
+| `graphify.md` | Opt-in codebase-graph layer: consult the graph before crawling; imports ≠ runtime coupling; freshness + cost honesty. |
 
 ### core/commands/
 
@@ -233,6 +262,7 @@ grep -rIE 'tsc|knip|eslint|firestore' core/
 | `/ci-simulate` | Run all `gates.prePush.steps` in order, report all failures (CI `if: always()` semantics). |
 | `/typecheck` | Run `commands.typecheck` from manifest; report errors. |
 | `/env-check` | Validate env vars documented in CLAUDE.md vs local env file. Never prints values. |
+| `/graphify` | Build/query a tree-sitter knowledge graph (AST, zero tokens). explain/path/query for blast-radius, flow-tracing, orientation. Needs no `stack.json`. |
 
 ### core/hooks/
 
@@ -263,7 +293,7 @@ Use it as the definitive reference for a fully-adopted setup.
 | `ast-rules/` | TypeScript ast-grep rules — optional structural enforcement add-on |
 | `scripts/` | 4 production scripts (pre-push guard, dead-code ratchet, secret scan) |
 
-### Rules (9)
+### Rules (10)
 
 | Rule | Domain |
 |---|---|
@@ -276,6 +306,7 @@ Use it as the definitive reference for a fully-adopted setup.
 | `folder-organization.md` | scripts/ subcategories, import path conventions |
 | `operating-procedure.md` | WB-specific routing (alert engines, cron, channel_snapshots, ARS currency) |
 | `regional-thresholds.md` | ARS vs USD scale differences for ROAS/CPA/spend thresholds |
+| `graphify.md` | Real graphify wiring: `python -m graphify` (Windows shim), root-scoped graph, 3 hooks, imports-only blind spot |
 
 ### Commands (15)
 
