@@ -35,6 +35,9 @@
       "steps": ["typecheck", "lint", "testAlerts", "test", "design", "cronDoc", "structural"]
     }
   },
+  "context": {
+    "filterVerbose": ["npm run test:unit", "npm run test:alerts", "npm run test:pre-push"]
+  },
   "paths": {
     "source": ["src/**"],
     "codeExtensions": [".ts", ".tsx"]

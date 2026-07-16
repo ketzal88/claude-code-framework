@@ -32,6 +32,9 @@
       "steps": ["typecheck", "lint", "test"]
     }
   },
+  "context": {
+    "filterVerbose": ["YOUR_TEST_CMD"]
+  },
   "paths": {
     "source": ["src/**"],
     "codeExtensions": [".ts", ".tsx"]

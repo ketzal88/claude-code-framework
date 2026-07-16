@@ -14,9 +14,10 @@ layer (secret-scan, blocking pre-push gate, SAST, dep-audit) driven entirely by 
 3. [stack.json — The Manifest](#stackjson--the-manifest)
 4. [Security Layer](#security-layer)
 5. [Codebase Graph Layer](#codebase-graph-layer)
-6. [Core Layer](#core-layer)
-7. [Worker Brain Reference Example](#worker-brain-reference-example)
-8. [Adopting This Framework](#adopting-this-framework)
+6. [Context Layer](#context-layer)
+7. [Core Layer](#core-layer)
+8. [Worker Brain Reference Example](#worker-brain-reference-example)
+9. [Adopting This Framework](#adopting-this-framework)
 
 ---
 
@@ -235,6 +236,87 @@ on small repos where grep suffices, keep it on-demand rather than always-on.
 
 ---
 
+## Context Layer
+
+Every token in the context window is paid for on every message. The expensive part is rarely
+what you notice — it is the **recurring** cost: a verbose command that spends thousands of
+tokens to say "all green", on every run, then sits in the transcript being re-read on every
+later turn.
+
+### Collapse verbose output when it passes
+
+Opt in per project via `stack.json`:
+
+```json
+{
+  "context": {
+    "filterVerbose": ["npm run test:unit", "npm run test:alerts"]
+  }
+}
+```
+
+`core/hooks/scripts/filter-verbose-guard.py` (PreToolUse/Bash) wraps exactly those commands in
+`filter-verbose-output.sh`, which collapses the output **only when the command passes**. Absent
+key = no wrapping, silently.
+
+Measured on the reference project:
+
+| Command | Before | After | |
+|---|---:|---:|---:|
+| `npm run test:unit` | 5,928 tok (370 lines) | 34 tok | −99.4% |
+| `npm run test:alerts` | 3,219 tok (194 lines) | 58 tok | −98.2% |
+
+Do **not** list typecheck or lint: they are already quiet when green, and when they fail you
+want the whole error.
+
+### Four rules this layer encodes
+
+**1. A failure is never filtered.** The full output is exactly what you need when something
+breaks. A blind grep strips the context at the worst possible moment. Collapse on success only.
+
+**2. The exit code is authoritative, text markers are not.** `cmd | grep` returns *grep's*
+status — a broken run reports green, and a passing run reports broken (grep exits 1 when it
+matches nothing). Any gate reading that exit code silently inverts. Capture `rc` before any pipe.
+
+**3. Match exactly; never on substrings.** A rule that fires on substrings matches `test:unit`
+inside `test:unittest`. The same class of bug: an unanchored `Error:` matches inside
+`RangeError:` — and test suites legitimately print expected errors (one asserting an
+invalid-timezone fallback prints `RangeError: Invalid time zone` **and passes**). That false
+positive is why this wrapper trusts the exit code first.
+
+**4. Static content belongs in CLAUDE.md, never in a per-prompt hook.** This is the big one.
+A `UserPromptSubmit` hook injects *alongside the prompt* — at the tail of the message array —
+so its text **accumulates in the history and is re-paid on every later turn**. Cost is
+quadratic. Roughly: 10k of static rules vs 2k injected per turn crosses over at ~6 turns; by
+turn 50 the static file wins by ~6x while injecting 5x less per turn. Meanwhile CLAUDE.md sits
+in the cached prefix and is billed at ~10% after the first turn.
+
+That is why this framework has **no dynamic rule-injection layer**, and why tools promising
+"rules that load only when relevant" tend to cost more than the static file they replace. The
+one place that trade genuinely pays is tool definitions, and Claude Code already does it
+natively (deferred MCP schemas + tool search) with no hook required.
+
+Corollary for hook authors: hooks may **append**, never rewrite or prune already-cached
+history. Pruning per turn invalidates the cached prefix from that point on — the canonical
+own-goal, and one Anthropic shipped itself (the 2026-04-23 postmortem, Bug 2: a
+context-cleanup that was meant to run once ran every turn, producing cache misses *and* a
+forgetful agent).
+
+### Measure before you cut
+
+Run `/context` in a clean session first. Two traps:
+
+- **Context saved ≠ money saved.** Cached content bills at ~10%, so trimming a cached
+  CLAUDE.md saves less than the raw token count suggests. It still buys quality — less noise,
+  more room. Recurring uncached output (test logs, per-turn hook injections) is where the real
+  spend is.
+- **Verify against a current version.** Claude Code counted MCP instructions once *per tool*
+  instead of once per server until January 2026, inflating those figures ~3x. Decisions made
+  against that number were made against a ghost. The ground truth is
+  `cache_read + cache_creation + input` from the API response.
+
+---
+
 ## Core Layer
 
 `core/` is entirely language-agnostic. Verification:
@@ -268,6 +350,7 @@ grep -rIE 'tsc|knip|eslint|firestore' core/
 
 `core/hooks/settings.template.json` — copy to `.claude/settings.json`. Pre-wired:
 - `PreToolUse` (Bash): `pre-push-guard.py` (blocking) + `secret-scan.sh` (blocking on commit)
+  + `filter-verbose-guard.py` (non-blocking; collapses passing output per `context.filterVerbose`)
 - `Stop`: `ratchet-guard.py` (dead-code ratchet, blocking)
 
 `core/hooks/scripts/read-config.py` — the manifest reader. Takes a dotted key path

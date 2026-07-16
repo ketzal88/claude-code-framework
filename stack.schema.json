@@ -106,6 +106,18 @@
       },
       "additionalProperties": false
     },
+    "context": {
+      "type": "object",
+      "description": "Context/token budget controls. Absent = no filtering.",
+      "properties": {
+        "filterVerbose": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "EXACT commands whose output is collapsed to its verdict when they PASS (full output always shown on failure). For verbose runners that spend thousands of tokens to say 'all green' — that cost lands in context on every run and stays in the transcript. Matched exactly, never as a substring; composed commands (pipe/redirect/&&) are left alone. Do NOT list typecheck/lint: already quiet when green, and you want the whole error when they fail."
+        }
+      },
+      "additionalProperties": false
+    },
     "paths": {
       "type": "object",
       "properties": {
