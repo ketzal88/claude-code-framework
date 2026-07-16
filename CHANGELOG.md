@@ -5,6 +5,22 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.3.0 — 2026-07-15
+
+**Added**
+- `core/rules/subagent-economics.md` — the model tier is a decision, not a
+  default. Declare `model:` on every agent definition (absent = inherits the most
+  expensive tier); set the tier per stage in fan-out workflows; scale the agent
+  count to the question. From a real measurement: subagent-heavy sessions were
+  **81% of a day's usage and 69% of a week's**, while the static overhead
+  everyone trims (system prompt, brain file, skills) did not register — it is
+  cached at ~10%. Each subagent opens its own window and inherits none of the
+  parent's cache, so cost scales with agent count × tier, and neither scales with
+  how hard the question is.
+- README Context Layer: the subagent half of the same problem, with the measured
+  shares (150k+ context = 76–82% of usage; one workflow = 25% of a day; one MCP
+  server's results = 13%).
+
 ## 1.2.0 — 2026-07-15
 
 Context layer + codebase-graph layer. The framework had gates for correctness and

@@ -338,6 +338,28 @@ own-goal, and one Anthropic shipped itself (the 2026-04-23 postmortem, Bug 2: a
 context-cleanup that was meant to run once ran every turn, producing cache misses *and* a
 forgetful agent).
 
+### Subagents are the other half — and usually the bigger one
+
+Collapsing command output fixes what a *command* dumps into context. Measured on
+a real account, the larger line is what an *agent* spawns:
+
+| Signal | Share of usage |
+|---|---:|
+| Subagent-heavy sessions | **81%** of a day, 69% of a week |
+| Sessions over 150k context | **76–82%** |
+| One orchestrated workflow | **25%** of a single day |
+| A single MCP server's results | **13%** of a day |
+
+The static overhead everyone trims — system prompt, brain file, skills — did not
+appear at all. It is cached at ~10%.
+
+Each subagent opens its own window, pays its own system prompt, and **inherits
+none of the parent's cache**. Cost scales with agent count × model tier, and
+neither scales with how hard the question is. So: declare `model:` on every agent
+definition (absent = inherits the most expensive tier), set the tier per stage in
+fan-out workflows, and size the fleet to the question. Full rule:
+`core/rules/subagent-economics.md`.
+
 ### Measure before you cut
 
 Run `/context` in a clean session first. Two traps:
@@ -376,6 +398,7 @@ grep -rIE 'tsc|knip|eslint|firestore' core/hooks/scripts/
 | `incident-triage.md` | Triage protocol + living error dictionary: never re-derive a solved diagnosis. |
 | `learning-loop.md` | Persistent memory that actually persists: project memory with index, post-run verification of headless automations. |
 | `graphify.md` | Opt-in codebase-graph layer: consult the graph before crawling; imports ≠ runtime coupling; freshness + cost honesty. |
+| `subagent-economics.md` | The model tier is a decision, not a default: declare `model:` on every agent, set the tier per workflow stage, scale the agent count to the question. |
 
 ### core/commands/
 
