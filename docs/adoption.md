@@ -15,10 +15,12 @@ cp -r core/ your-project/.claude/core/
 `core/` is entirely language-agnostic. No edits needed.
 It contains:
 - `CLAUDE.template.md` — brain template with `{{placeholders}}`
-- `rules/` — 4 universal rules
-- `commands/` — 4 universal slash commands
+- `rules/` — 8 universal rules (operating-procedure, ratchet-philosophy, security-gates, commands-encode-workflows, close-protocol, environment-canonical, incident-triage, learning-loop)
+- `commands/` — 5 universal slash commands
 - `hooks/` — hook scripts and settings template
 - `security/` — secret patterns and SAST adapter docs
+
+Sanity-check the hook guards anytime with `python tests/test-core-guards.py`.
 
 ---
 
@@ -42,7 +44,7 @@ Create `stack.json` at the **project root** (not inside `.claude/`). Start minim
 }
 ```
 
-**Full TypeScript example** → `examples/worker-brain/stack.json`
+**Full TypeScript example** → `examples/nextjs-firebase/stack.json`
 
 Key rule: **absent key = gate silently skipped**. Never required to fill all keys.
 Adopt incrementally — each gate you add is independent.
@@ -56,11 +58,13 @@ cp .claude/core/hooks/settings.template.json .claude/settings.json
 ```
 
 The template pre-wires:
-- `PreToolUse` (Bash `git push`): `pre-push-guard.py` — **blocking**
+- `PreToolUse` (Bash): `canonical-guard.py` — **blocking** (reads `environment.forbiddenCommands`; no-op if absent)
+- `PreToolUse` (Bash `git push`): `pre-push-guard.py` — **blocking** (push policy + quality gate)
 - `PreToolUse` (Bash `git commit`): `secret-scan.sh` — **blocking**
-- `Stop`: `ratchet-guard.py` (dead-code ratchet) — **blocking**
+- `Stop`: `ratchet-guard.py` (dead-code ratchet, scope-by-diff) — **blocking**
+- `Stop`: `close-guard.py` (close protocol) — **blocking once** (no-op unless `gates.closeProtocol: "blocking"`)
 
-Both `PreToolUse` hooks run **before** the tool action completes, so they can
+All `PreToolUse` hooks run **before** the tool action completes, so they can
 actually block. The secret scan must be `PreToolUse` — `PostToolUse` fires after
 the commit is done and `git diff --cached` is already empty.
 
@@ -123,8 +127,9 @@ an invariant specific to your codebase.
 - There's an architectural invariant that must always hold
 - The rule is not obvious from the code itself
 
-See `examples/worker-brain/rules/` for 9 production domain rules across:
-alert engine contracts, cron security, database conventions, error patterns, regional thresholds.
+See `examples/nextjs-firebase/rules/` for 12 production domain rules across:
+alert engine contracts, cron security, database conventions, error patterns, regional
+thresholds, environment canonical paths, UI delivery checklists and incident triage.
 
 ---
 
@@ -137,7 +142,7 @@ Domain commands go in `.claude/commands/`. Each encodes a multi-step workflow.
 - There's a workflow with built-in safety checks
 - The workflow involves multiple files, services, or confirmation steps
 
-See `examples/worker-brain/commands/` for 15 production slash commands:
+See `examples/nextjs-firebase/commands/` for 15 production slash commands:
 from alert scaffolding to Firestore index deploy to AI prompt versioning.
 
 ---
@@ -145,8 +150,9 @@ from alert scaffolding to Firestore index deploy to AI prompt versioning.
 ## Verification
 
 ```bash
-# Verify core has no hardcoded tool names
-grep -rIE 'tsc|knip|eslint|firestore' .claude/core/
+# Verify the executable core has no hardcoded tool names
+# (rules may cite tools as illustrative examples; the scripts never do)
+grep -rIE 'tsc|knip|eslint|firestore' .claude/core/hooks/scripts/
 # Must return empty
 
 # Verify read-config works
@@ -162,16 +168,17 @@ EOF
 
 ---
 
-## Reference: Worker Brain
+## Reference: ExampleApp
 
-`examples/worker-brain/` is the full, faithful reference for a TypeScript/Next.js 14/Firebase/Vercel
+`examples/nextjs-firebase/` is the full, faithful reference for a TypeScript/Next.js 14/Firebase/Vercel
 production SaaS. Use it to understand what a fully-adopted setup looks like:
 
-- A complete `stack.json` with all gates wired (8 commands, design + cron-doc gates, sentrux)
-- 9 domain rules across alert engines, cron security, Firestore conventions, currency thresholds
+- A complete `stack.json` with all gates wired (8 commands, design + cron-doc gates, sentrux, push policy, close protocol, forbidden commands)
+- 12 domain rules across alert engines, cron security, Firestore conventions, currency thresholds, environment paths, UI delivery, incident triage
 - 15 slash commands from scaffolding to backfill to AI prompt versioning
-- 10 hooks: 2 blocking `PreToolUse`, 6 advisory `PostToolUse`, 2 blocking `Stop`
-- 4 production scripts and TypeScript ast-grep rules as an optional add-on
+- 13 hooks: 3 blocking `PreToolUse`, 6 advisory `PostToolUse`, 4 blocking `Stop`
+- 13 production scripts (guards, baseline checkers, dev-up) and TypeScript ast-grep rules as an optional add-on
+- `sync-manifest.json` — update the mirror from the source project in 1 command: `python scripts/sync-example.py <project-root> examples/nextjs-firebase` (sanitization + leak check built in)
 
 ---
 

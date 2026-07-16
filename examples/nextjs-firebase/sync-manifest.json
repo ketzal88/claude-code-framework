@@ -1,0 +1,51 @@
+{
+  "$comment": "Manifest for scripts/sync-example.py — maps example files to their source paths in the private production project. Run: python scripts/sync-example.py <project-root> examples/nextjs-firebase",
+  "map": {
+    "rules/operating-procedure.md": ".claude/rules/operating-procedure.md",
+    "rules/firestore-conventions.md": ".claude/rules/firestore-conventions.md",
+    "rules/alert-engine-pattern.md": ".claude/rules/alert-engine-pattern.md",
+    "rules/cron-security.md": ".claude/rules/cron-security.md",
+    "rules/console-error-pattern.md": ".claude/rules/console-error-pattern.md",
+    "rules/regional-thresholds.md": ".claude/rules/regional-thresholds.md",
+    "rules/code-quality-ratchets.md": ".claude/rules/code-quality-ratchets.md",
+    "rules/ci-zero-failure.md": ".claude/rules/ci-zero-failure.md",
+    "rules/folder-organization.md": ".claude/rules/folder-organization.md",
+    "rules/windows-environment.md": ".claude/rules/windows-environment.md",
+    "rules/ui-delivery-checklist.md": ".claude/rules/ui-delivery-checklist.md",
+    "rules/incident-triage.md": ".claude/rules/incident-triage.md",
+    "settings.json": ".claude/settings.json",
+    "scripts/pre-push-quality-guard.py": "scripts/pre-push-quality-guard.py",
+    "scripts/pre-bash-canonical-guard.py": "scripts/pre-bash-canonical-guard.py",
+    "scripts/stop-dead-code-guard.py": "scripts/stop-dead-code-guard.py",
+    "scripts/stop-design-guard.py": "scripts/stop-design-guard.py",
+    "scripts/stop-dirty-tree-guard.py": "scripts/stop-dirty-tree-guard.py",
+    "scripts/stop-ui-smoke-guard.py": "scripts/stop-ui-smoke-guard.py",
+    "scripts/check-dead-code-baseline.js": "scripts/check-dead-code-baseline.js",
+    "scripts/check-design-baseline.js": "scripts/check-design-baseline.js",
+    "scripts/check-cron-doc-sync.js": "scripts/check-cron-doc-sync.js",
+    "scripts/check-error-reporting.js": "scripts/check-error-reporting.js",
+    "scripts/check-no-new-any.js": "scripts/check-no-new-any.js",
+    "scripts/check-no-secrets.sh": "scripts/check-no-secrets.sh",
+    "scripts/ops/dev-up.mjs": "scripts/ops/dev-up.mjs"
+  },
+  "replacements": [
+    { "pattern": "Worker Brain", "replace": "ExampleApp" },
+    { "pattern": "WorkerBrain", "replace": "ExampleApp" },
+    { "pattern": "worker-brain", "replace": "nextjs-firebase" },
+    { "pattern": "brain\\.worker\\.ar", "replace": "app.example.com" },
+    { "pattern": "@worker\\.ar", "replace": "@example.com" },
+    { "pattern": "ketzal88", "replace": "your-org" },
+    { "pattern": "\\bGabriel\\b", "replace": "el operador" },
+    { "pattern": "\\bSebasti[aá]n\\b", "replace": "el operador" },
+    { "pattern": "\\bBlunua\\b", "replace": "ClientA" },
+    { "pattern": "\\bPaia\\b", "replace": "ClientB" },
+    { "pattern": "\\belepants\\b", "replace": "ClientC" },
+    { "pattern": "\\bPriscila\\b", "replace": "OwnerName" },
+    { "pattern": "\\bCami\\b", "replace": "SpecialistName" },
+    { "pattern": "C0[A-Z0-9]{8,}", "replace": "C0XXXXXXXXX" }
+  ],
+  "leakCheck": [
+    "Worker Brain", "worker-brain", "brain\\.worker", "ketzal88",
+    "\\bGabriel\\b", "Blunua", "\\bPaia\\b", "@worker\\.ar"
+  ]
+}

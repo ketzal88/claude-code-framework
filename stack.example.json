@@ -30,7 +30,17 @@
     "prePush": {
       "blocking": true,
       "steps": ["typecheck", "lint", "test"]
-    }
+    },
+    "push": "operator-only",
+    "closeProtocol": "blocking"
+  },
+  "environment": {
+    "forbiddenCommands": [
+      {
+        "pattern": "(^|[;&|]\\s*)(npx\\s+)?eslint\\b",
+        "fix": "Global ESLint fails without eslint.config here. Use: YOUR_LINT_CMD"
+      }
+    ]
   },
   "context": {
     "filterVerbose": ["YOUR_TEST_CMD"]

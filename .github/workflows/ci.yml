@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile all Python (core scripts, tools, tests)
+        run: python -m compileall -q core scripts tests
+
+      - name: Shell syntax check
+        run: |
+          for f in $(find core examples scripts -name '*.sh'); do
+            bash -n "$f"
+          done
+
+      - name: Guard smoke tests
+        run: python tests/test-core-guards.py
+
+      - name: Doc-sync gate (the framework eats its own dog food)
+        run: python scripts/check-doc-sync.py
+
+      - name: Validate stack.json files against schema
+        run: |
+          pip install --quiet jsonschema
+          python - <<'EOF'
+          import json, glob
+          from jsonschema import validate
+          schema = json.load(open("stack.schema.json"))
+          targets = ["stack.example.json"] + glob.glob("examples/*/stack.json")
+          for t in targets:
+              validate(json.load(open(t)), schema)
+              print("valid:", t)
+          EOF

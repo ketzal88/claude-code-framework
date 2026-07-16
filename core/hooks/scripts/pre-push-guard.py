@@ -78,7 +78,29 @@ def main():
     push_cmd = (payload.get("tool_input", {}) or {}).get("command", "") or ""
     if not re.match(r"^\s*git\s+push(\s|$)", push_cmd):
         return 0
-    if "--dry-run" in push_cmd or "--no-verify" in push_cmd:
+    if "--dry-run" in push_cmd:
+        return 0
+
+    # ── Push policy (close-protocol) ─────────────────────────────────────
+    # gates.push = "operator-only" in stack.json => the agent NEVER pushes:
+    # every `git push` (including --no-verify — that was the bypass agents
+    # kept trying) blocks instantly with the correct close instruction,
+    # BEFORE burning minutes of checks on a push the operator will do by
+    # hand anyway. Explicit exception: ALLOW_CLAUDE_PUSH=1 (operator asked
+    # in chat) -> the full check suite below runs before allowing it.
+    if cfg("gates.push") == "operator-only":
+        allow = os.environ.get("ALLOW_CLAUDE_PUSH") == "1" or "ALLOW_CLAUDE_PUSH=1" in push_cmd
+        if not allow:
+            sys.stderr.write(
+                "[close-protocol] git push blocked: pushing belongs to the operator.\n"
+                "  Do not retry or use bypasses (--no-verify / SKIP_PREPUSH).\n"
+                "  Correct close: commit locally and end your message with\n"
+                "  'committed: <short sha> - N commit(s) ready to push'.\n"
+                "  If the operator explicitly asked you to push: ALLOW_CLAUDE_PUSH=1 git push ...\n"
+            )
+            return 2
+
+    if "--no-verify" in push_cmd:
         return 0
 
     if os.environ.get("SKIP_PREPUSH") == "1":
