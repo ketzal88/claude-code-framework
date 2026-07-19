@@ -28,6 +28,48 @@ def run(script, payload, cwd):
     )
 
 
+def secret_scan_cases():
+    """secret-scan.sh needs a git repo with staged files; build a throwaway one.
+    Returns (fails, total). Skips (0, 0) if bash is unavailable."""
+    import shutil
+    import tempfile
+    bash = shutil.which("bash")
+    if not bash:
+        print("SKIP secret-scan.sh (no bash on PATH)")
+        return 0, 0
+    scanner_src = os.path.join(CORE, "secret-scan.sh")
+    patterns_src = os.path.join(REPO, "core", "security", "secret-patterns.txt")
+    fails, total = 0, 0
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "core", "hooks", "scripts"))
+        os.makedirs(os.path.join(tmp, "core", "security"))
+        shutil.copy(scanner_src, os.path.join(tmp, "core", "hooks", "scripts", "secret-scan.sh"))
+        shutil.copy(patterns_src, os.path.join(tmp, "core", "security", "secret-patterns.txt"))
+        scanner = os.path.join(tmp, "core", "hooks", "scripts", "secret-scan.sh")
+        subprocess.run(["git", "init", "-q"], cwd=tmp, env=ENV)
+
+        def scan():
+            return subprocess.run([bash, scanner], cwd=tmp, capture_output=True, text=True, env=ENV)
+
+        # 1) the framework's own scanner infra is exempt from the filename check
+        subprocess.run(["git", "add", "core/hooks/scripts/secret-scan.sh"], cwd=tmp, env=ENV)
+        r = scan()
+        total += 1
+        ok = r.returncode == 0
+        fails += 0 if ok else 1
+        print(("OK  " if ok else "FAIL") + f" secret-scan.sh [core/ infra exempt] exit={r.returncode} expected=0")
+
+        # 2) a real secrets-looking filename is still blocked
+        open(os.path.join(tmp, ".env"), "w").close()
+        subprocess.run(["git", "add", "-f", ".env"], cwd=tmp, env=ENV)
+        r = scan()
+        total += 1
+        ok = r.returncode == 1
+        fails += 0 if ok else 1
+        print(("OK  " if ok else "FAIL") + f" secret-scan.sh [.env blocked] exit={r.returncode} expected=1")
+    return fails, total
+
+
 def main():
     cases = [
         # canonical-guard: config-driven forbidden commands
@@ -59,7 +101,10 @@ def main():
         label = payload.get("tool_input", {}).get("command", "-")[:40] if isinstance(payload, dict) else "malformed stdin"
         print(("OK  " if ok else "FAIL") + f" {script} [{label}] exit={r.returncode} expected={expected}")
 
-    print(("PASS" if fails == 0 else "FAIL") + f" — {len(cases) - fails}/{len(cases)}")
+    s_fails, s_total = secret_scan_cases()
+    fails += s_fails
+    total = len(cases) + s_total
+    print(("PASS" if fails == 0 else "FAIL") + f" — {total - fails}/{total}")
     return 1 if fails else 0
 
 

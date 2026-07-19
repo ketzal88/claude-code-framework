@@ -5,6 +5,19 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.3.1 — 2026-07-19
+
+**Fixed**
+- `secret-scan.sh` filename check no longer flags the framework's own scanner
+  infrastructure. Staging `core/**` (exactly what adopters copy) — or the scanner
+  script / pattern file anywhere — tripped the `*secret*` filename heuristic and
+  blocked the commit with "looks like a secrets file". These files only *describe*
+  secrets; they never hold them, so they are now exempt from the filename check
+  (the content-pattern check still applies). Surfaced while adopting the framework
+  into a new repo, where the very first commit of `core/` was blocked.
+- `tests/test-core-guards.py` now covers `secret-scan.sh` (core/ infra exempt, a
+  `.env` file still blocked; skips gracefully if bash is unavailable).
+
 ## 1.3.0 — 2026-07-15
 
 **Added**
