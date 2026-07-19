@@ -33,6 +33,8 @@ FOUND=0
 
 if [ -f "$PATTERNS_FILE" ]; then
     while IFS= read -r pattern || [ -n "$pattern" ]; do
+        # tolera patterns.txt con CRLF (Windows/autocrlf); sin esto grep no matchea
+        pattern="${pattern%$'\r'}"
         [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
         [[ -z "${pattern// }" ]] && continue
         if echo "$DIFF" | grep -qiE "$pattern" 2>/dev/null; then
