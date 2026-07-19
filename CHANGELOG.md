@@ -5,6 +5,28 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.3.2 — 2026-07-19
+
+**Fixed**
+- **`secret-scan` never blocked a commit — on any platform.** Claude Code denies a
+  tool only on hook **exit 2**; exit 1 is treated as a non-blocking error and the
+  tool runs anyway. `secret-scan.sh` exits 1 when it finds a secret, and the
+  `settings.template.json` wrapper did `sys.exit(subprocess.call(...))`, propagating
+  that 1 — so a `git commit` carrying a secret went straight through. The wrapper is
+  now a real script (`core/hooks/scripts/secret-scan-guard.py`) that maps any
+  non-zero scanner exit to 2. **Adopters must re-copy `core/` AND update the
+  secret-scan `command` in their `settings.json`** (diff against
+  `settings.template.json`).
+- **`secret-scan.sh` silently passed everything on Windows.** With
+  `core.autocrlf=true` and no `.gitattributes`, git checks out
+  `core/security/secret-patterns.txt` with CRLF; the read loop left a trailing `\r`
+  on every pattern, so `grep -E "PATTERN\r"` matched nothing. Patterns are now
+  `\r`-stripped, and `.gitattributes` pins `*.sh` and `core/security/*.txt` to LF.
+
+**Note for adopters:** these two bugs stacked — even after the CRLF fix the hook
+still could not block, because of the exit code. Verify with a throwaway commit
+carrying a fake key (e.g. an `AKIA...` example value): it must be denied.
+
 ## 1.3.1 — 2026-07-19
 
 **Fixed**

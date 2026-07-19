@@ -19,7 +19,7 @@
           },
           {
             "type": "command",
-            "command": "python -c \"import json,sys,subprocess,os; d=json.load(sys.stdin); cmd=d.get('tool_input',{}).get('command','') or ''; root=os.environ.get('CLAUDE_PROJECT_DIR','.'); (sys.exit(subprocess.call(['bash', os.path.join(root,'core','hooks','scripts','secret-scan.sh')], cwd=root))) if cmd.lstrip().startswith('git commit') else None\"",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python core/hooks/scripts/secret-scan-guard.py",
             "comment": "BLOCKING. MUST be PreToolUse — PostToolUse runs after the commit completes, at which point git diff --cached is empty and secrets cannot be caught."
           },
           {
