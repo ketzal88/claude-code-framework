@@ -70,6 +70,47 @@ def secret_scan_cases():
     return fails, total
 
 
+def secret_scan_guard_cases():
+    """The WRAPPER is what actually denies. The scanner exits 1 on a hit, but Claude
+    Code only blocks on exit 2 — a wrapper that propagates the 1 blocks nothing (the
+    1.3.2 regression). These cases pin the mapping so it cannot come back.
+    Returns (fails, total); skips (0, 0) if bash is unavailable."""
+    import shutil
+    import tempfile
+    if not shutil.which("bash"):
+        print("SKIP secret-scan-guard.py (no bash on PATH)")
+        return 0, 0
+    fails, total = 0, 0
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init", "-q"], cwd=tmp, env=ENV)
+        env = dict(ENV, CLAUDE_PROJECT_DIR=tmp)
+
+        def guard(command):
+            return subprocess.run(
+                [sys.executable, os.path.join(CORE, "secret-scan-guard.py")],
+                input=json.dumps({"tool_input": {"command": command}}),
+                capture_output=True, text=True, env=env, cwd=tmp,
+            )
+
+        checks = []
+        # 1) nothing staged: a commit sails through
+        checks.append(("clean tree", guard("git commit -m x").returncode, 0))
+        # 2) a staged secret must map the scanner's exit 1 to exit 2 (DENY)
+        open(os.path.join(tmp, ".env"), "w").close()
+        subprocess.run(["git", "add", "-f", ".env"], cwd=tmp, env=env)
+        checks.append(("staged .env -> DENY", guard("git commit -m x").returncode, 2))
+        # 3) the guard only cares about commits — everything else is none of its business
+        checks.append(("non-commit ignored", guard("git status").returncode, 0))
+
+        for label, got, expected in checks:
+            total += 1
+            ok = got == expected
+            fails += 0 if ok else 1
+            print(("OK  " if ok else "FAIL")
+                  + f" secret-scan-guard.py [{label}] exit={got} expected={expected}")
+    return fails, total
+
+
 def main():
     cases = [
         # canonical-guard: config-driven forbidden commands
@@ -103,7 +144,9 @@ def main():
 
     s_fails, s_total = secret_scan_cases()
     fails += s_fails
-    total = len(cases) + s_total
+    g_fails, g_total = secret_scan_guard_cases()
+    fails += g_fails
+    total = len(cases) + s_total + g_total
     print(("PASS" if fails == 0 else "FAIL") + f" — {total - fails}/{total}")
     return 1 if fails else 0
 

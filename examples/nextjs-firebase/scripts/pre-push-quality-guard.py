@@ -10,6 +10,7 @@ BEFORE the push (not 5 minutes later in Slack):
   5. python -c "json.load(open('firestore.indexes.json'))"  ← mirrors CI step 5
   5b. npm run check:design    ← design-contract ratchet (mirrors CI)
   5c. npm run check:cron-doc  ← cron table ↔ crons.yml doc-sync (mirrors CI)
+  5d. npm run check:page-shell ← every panel page reaches <AppLayout> (mirrors CI)
   6. "use client" check — components using React hooks without the directive
   7. sentrux gate — structural regression vs .sentrux/baseline.json (only if binary + baseline exist)
 
@@ -51,6 +52,7 @@ CHECKS = [
     ("indexes.json", "python -c \"import json; json.load(open('firestore.indexes.json'))\""),
     ("design",      "npm run check:design"),
     ("cron-doc",    "npm run check:cron-doc"),
+    ("page-shell",  "npm run check:page-shell"),
 ]
 
 CI_MIRROR_ENV = {

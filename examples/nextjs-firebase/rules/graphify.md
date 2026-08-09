@@ -1,13 +1,13 @@
-# graphify — knowledge graph del codebase (wiring real de Worker Brain)
+# graphify — knowledge graph del codebase (wiring real de ExampleApp)
 
-Espejo fiel de cómo está cableado graphify en producción (repo ai-analyzer /
-Worker Brain, TypeScript/Next.js/Firebase). La versión portable/agnóstica vive en
+Espejo fiel de cómo está cableado graphify en producción (ExampleApp,
+TypeScript/Next.js/Firebase). La versión portable/agnóstica vive en
 `core/commands/graphify.md` + `core/rules/graphify.md`; esto documenta las
 particularidades del stack real.
 
 ## Invocación (gotcha Windows real)
 
-En la máquina de Worker Brain el `.exe` de graphify no se pudo escribir en
+En la máquina de ExampleApp el `.exe` de graphify no se pudo escribir en
 `C:\Python310\Scripts` (dir read-only + fuera de PATH), así que:
 - Todo se invoca vía `python -m graphify <cmd>`.
 - Hay shims manuales (`graphify` + `graphify.cmd` → `python -m graphify %*`) en
@@ -45,7 +45,7 @@ En la máquina de Worker Brain el `.exe` de graphify no se pudo escribir en
 
 ## Punto ciego (importante en este stack)
 
-El grafo es de imports/AST — NO ve el acople runtime que define a Worker Brain:
+El grafo es de imports/AST — NO ve el acople runtime que define a ExampleApp:
 cron→route por HTTP, colección `channel_snapshots` compartida entre services,
 event flows. Las islas del grafo reflejan ese desacople real. Orientar con el grafo,
 confirmar en el código — nunca tratarlo como análisis de impacto completo para

@@ -5,6 +5,63 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.4.0 — 2026-08-09
+
+**Fixed — the documented install left every gate pointing at nothing**
+- `docs/adoption.md` said to copy `core/` into `.claude/core/`, while
+  `settings.template.json` invoked its hooks as `python core/hooks/scripts/…`
+  relative to the project root — a directory the install never created. Python then
+  exits 2 on the missing file, and **exit 2 means deny**: anyone who followed the
+  guide ended up with every Bash call and every turn close blocked, by an error that
+  never mentioned this framework. The template now resolves `.claude/core/…`,
+  matching Step 1. **Adopters: diff `settings.template.json` against your
+  `settings.json`.** If you installed `core/` somewhere else, edit the paths — and
+  verify with the two commands now in Step 3 of the adoption guide.
+- `secret-scan-guard.py` hardcoded the scanner path under the project root, so the
+  same mismatch made `bash` fail — which the guard mapped to exit 2, denying *every*
+  commit forever. It now resolves `secret-scan.sh` next to itself, and a missing
+  scanner **allows** the commit with a loud message: a broken install is a setup
+  error, not a detected secret, and must not masquerade as one.
+- `core/CLAUDE.template.md` imported `@.claude/rules/operating-procedure.md`, a path
+  the install never creates. Now `@.claude/core/rules/…`.
+
+**Changed — the example mirrors a setup that was audited down by 78%**
+- The source project audited every standing instruction (would an agent do this
+  anyway? does a gate already cover it? does it conflict?) and cut always-loaded
+  context from 11,381 to 2,466 words: 12 rules to 3, `CLAUDE.md` 3,300 to 551.
+- `examples/nextjs-firebase/` now mirrors that: 6 rules moved to `archive/rules/`,
+  and **the real `CLAUDE.md` is mirrored for the first time** — the manifest had no
+  target for it, so the single biggest artifact of the setup never reached the
+  example. `alert-engine-pattern`, `cron-security` and `regional-thresholds` stay
+  mirrored from the source's archive: they carry domain facts no gate can recover.
+- `commands/` (15) and 5 more scripts joined `sync-manifest.json`. They were never
+  in it, so they drifted unseen — one command was 32% similar to its source.
+- **This ratio does not transfer to `core/`.** There the rules are not loaded per
+  session and every gate behind them is opt-in via `stack.json` (absent key = silent
+  no-op), so a rule that is redundant in a wired repo is the only safety net in one
+  without. Nothing was cut from `core/`.
+
+**Added**
+- `scripts/check-doc-sync.py` now fails if any file under
+  `examples/*/{rules,commands,scripts}` is missing from that example's
+  `sync-manifest.json` (declare it in `map`, or in the new `unsynced` list if it is
+  example-only). The mirror had rotted for months and every gate stayed green —
+  a gate that cannot see the drift is indistinguishable from no gate.
+- Leak detection widened to `Worker[ _-]?Brain`, the source project's name and
+  developer paths. It immediately caught two files that were already public.
+- Three tests for `secret-scan-guard.py` (clean tree, staged secret → exit 2,
+  non-commit ignored). It had **zero** coverage — precisely where the 1.3.2
+  regression happened. Suite: 12 → 15 cases.
+
+**Docs**
+- Corrected counts that had drifted: 10 core rules (not 8), 6 core commands (not 5),
+  12 hook scripts (not 7), and the example's real 6/6/6 hook split (not 3/6/4).
+- The secret-scan section taught the harmless lesson (`PreToolUse` vs `PostToolUse`)
+  and still described the *bug* — "blocks it (exit 1)". It now leads with the exit-2
+  contract and names the wrapper that enforces it.
+- Documented a known gap: `security.secretScan` is advertised as configurable but
+  the guard never reads it. Better a documented gap than a false promise.
+
 ## 1.3.2 — 2026-07-19
 
 **Fixed**

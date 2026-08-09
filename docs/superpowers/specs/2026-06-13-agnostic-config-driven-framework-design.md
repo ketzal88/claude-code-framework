@@ -14,7 +14,7 @@
 
 2. **It has drifted from the real setup.** The published repo is a hand-generalized *snapshot* that is now stale and partial versus the `.claude/` directory actually running in the ExampleApp repo (the one that "works great"). Concrete evidence:
    - Published rules: `pure-engine-pattern`, `error-reporting-pattern`, `optional-fields-migration`, `ci-zero-failure`, `code-quality-ratchets`, `cron-security`, `operating-procedure`.
-   - Real ai-analyzer rules: `alert-engine-pattern`, `console-error-pattern`, `firestore-conventions`, `regional-thresholds`, `folder-organization`, `cron-security`, `operating-procedure`, `code-quality-ratchets`, `ci-zero-failure`.
+   - Real ExampleApp rules: `alert-engine-pattern`, `console-error-pattern`, `firestore-conventions`, `regional-thresholds`, `folder-organization`, `cron-security`, `operating-procedure`, `code-quality-ratchets`, `ci-zero-failure`.
    - Published commands: 6. Real commands: ~16.
    - `sentrux` (SAST via MCP), the blocking pre-push guard mirroring CI's 6 checks, and several hooks exist in reality but are absent or misdescribed in the framework (e.g. the README calls the pre-push gate "advisory" when it is **blocking**).
 
@@ -168,7 +168,7 @@ Every hook and command becomes a thin manifest-reader: it asks `read-config` for
 
 ## 6. Fidelity step (capturing the real setup)
 
-Before/while extracting the agnostic core, reconcile the framework with the **actual** ExampleApp `.claude/` (source of truth: `c:\Users\gabri\Documents\Worker\Webs\ai-analyzer\.claude\` + `scripts/`):
+Before/while extracting the agnostic core, reconcile the framework with the **actual** ExampleApp `.claude/` (source of truth: the private production project's `.claude/` + `scripts/` directories):
 
 - Bring `examples/nextjs-firebase/rules/` to the real, current rule set (not the stale generalized names).
 - Bring `examples/nextjs-firebase/commands/` to the real ~16 commands.
@@ -202,7 +202,7 @@ Each phase is independently reviewable. No phase ships a `core/` file that names
 |---|---|
 | `read-config` becomes fragile/magic | Keep it <30 lines, missing-key = safe skip, ship unit tests against a fixture manifest |
 | Cross-platform shell (Windows/bash) | Hooks already use Python one-liners; keep Python as the portable layer, `jq` optional |
-| Example drifts from real setup again | Treat `examples/nextjs-firebase/` as a mirror with a documented source-of-truth path; future updates sync from ai-analyzer |
+| Example drifts from real setup again | Treat `examples/nextjs-firebase/` as a mirror with a documented source-of-truth path; future updates sync from the production project |
 | Over-abstraction hurts readability | Manifest swaps **commands only**; structural/language-specific content stays out of core, documented as opt-in |
 
 ---

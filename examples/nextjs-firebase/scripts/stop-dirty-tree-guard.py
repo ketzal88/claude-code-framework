@@ -15,6 +15,10 @@ Skip conditions (exit 0):
   - stop_hook_active=True (re-trigger de nuestro propio bloqueo previo).
   - SKIP_COMMITCHECK=1 (bypass explicito).
   - working tree limpio, o solo cambios docs/config (.md, docs/, .claude/).
+  - los archivos sucios NO los toco Claude en esta sesion (deuda de otra
+    sesion / edicion manual de el operador). Feedback 2026-08-07: avisar por
+    trabajo ajeno obligaba a un descargo "(b) es de otra sesion" en cada
+    cierre, que ensuciaba la conversacion sin aportar nada.
 
 NOTE: mensajes ASCII-only (consolas cp1252).
 """
@@ -22,6 +26,8 @@ import json
 import os
 import subprocess
 import sys
+
+from hook_session_files import transcript_edits
 
 DOC_ONLY_HINTS = (".md",)
 DOC_DIR_PREFIXES = ("docs/", ".claude/", ".github/")
@@ -66,6 +72,18 @@ def main():
 
     if not code_files:
         return 0
+
+    # Solo avisar por lo que escribio Claude en ESTA sesion. Lo demas es
+    # deuda ajena y no es suya para commitear ni para justificar.
+    # A proposito SOLO `transcript_edits` y no `session_touched`: este guard
+    # pregunta por lo que quedo SIN commitear, asi que sumarle los archivos
+    # ya commiteados de la sesion no tendria sentido.
+    touched = transcript_edits(payload.get("transcript_path"), project_root)
+    if touched is not None:
+        touched_lc = {t.lower() for t in touched}
+        code_files = [p for p in code_files if p.lower() in touched_lc]
+        if not code_files:
+            return 0
 
     sys.stderr.write(
         "[close-protocol] quedan " + str(len(code_files)) +

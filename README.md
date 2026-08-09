@@ -57,7 +57,7 @@ claude-code-framework/
 ├─ .github/workflows/ci.yml   # compile + guard tests + doc-sync + schema validation
 ├─ core/
 │  ├─ CLAUDE.template.md      # brain template with {{placeholders}}
-│  ├─ rules/
+│  ├─ rules/                          # 10 universal rules
 │  │  ├─ operating-procedure.md
 │  │  ├─ ratchet-philosophy.md
 │  │  ├─ security-gates.md
@@ -65,23 +65,31 @@ claude-code-framework/
 │  │  ├─ close-protocol.md            # how every substantial turn must end
 │  │  ├─ environment-canonical.md     # one true path per operation, enforced
 │  │  ├─ incident-triage.md           # protocol + living error dictionary
-│  │  └─ learning-loop.md             # persistent memory that actually persists
-│  ├─ commands/
+│  │  ├─ learning-loop.md             # persistent memory that actually persists
+│  │  ├─ graphify.md                  # code knowledge graph: use + blind spots
+│  │  └─ subagent-economics.md        # model tier and fan-out are cost decisions
+│  ├─ commands/                       # 6 universal slash commands
 │  │  ├─ commit-checkpoint.md
 │  │  ├─ ci-simulate.md
 │  │  ├─ typecheck.md
 │  │  ├─ env-check.md
+│  │  ├─ graphify.md
 │  │  └─ security-review.md
 │  └─ hooks/
 │     ├─ settings.template.json
-│     └─ scripts/
-│        ├─ read-config.py       # manifest reader — heart of config-driven
-│        ├─ secret-scan.sh       # agnostic regex secret scanner
-│        ├─ pre-push-guard.py    # gates.prePush.steps + gates.push=operator-only; BLOCKING
-│        ├─ ratchet-guard.py     # generic baseline ratchet (Stop hook) + CHANGED_FILES scope
-│        ├─ canonical-guard.py   # blocks environment.forbiddenCommands with the fix inline
-│        ├─ close-guard.py       # close-protocol: uncommitted code at Stop reminds once
-│        └─ sast-scan.sh         # runs security.sast
+│     └─ scripts/                     # 12 files
+│        ├─ read-config.py            # manifest reader — heart of config-driven
+│        ├─ secret-scan.sh            # agnostic regex secret scanner (exits 1 on hit)
+│        ├─ secret-scan-guard.py      # wrapper wired in the template; maps hit -> exit 2 (deny)
+│        ├─ pre-push-guard.py         # gates.prePush.steps + gates.push=operator-only; BLOCKING
+│        ├─ ratchet-guard.py          # generic baseline ratchet (Stop hook) + CHANGED_FILES scope
+│        ├─ canonical-guard.py        # blocks environment.forbiddenCommands with the fix inline
+│        ├─ close-guard.py            # close-protocol: uncommitted code at Stop reminds once
+│        ├─ filter-verbose-guard.py   # collapses passing output per context.filterVerbose
+│        ├─ filter-verbose-output.sh  # the wrapper it installs
+│        ├─ stop-graphify-refresh.py  # optional: refresh the code graph after a turn
+│        ├─ security-triage.sh        # deterministic first pass for /security-review
+│        └─ sast-scan.sh              # runs security.sast
 ├─ core/security/
 │  ├─ secret-patterns.txt
 │  └─ README.md               # SAST adapter docs
@@ -93,12 +101,14 @@ claude-code-framework/
 └─ examples/
    └─ nextjs-firebase/
       ├─ stack.json             # fully-filled TypeScript/Next.js/Firebase manifest
+      ├─ CLAUDE.md              # the production brain file (551 words — see the audit note)
       ├─ settings.json          # production .claude/settings.json (anonymized)
       ├─ sync-manifest.json     # file map + sanitization rules for sync-example.py
-      ├─ rules/                 # 12 domain rules (anonymized from production)
+      ├─ rules/                 # 7 domain rules (anonymized from production)
+      ├─ archive/rules/         # 6 rules the source project retired on 2026-08-09
       ├─ commands/              # 15 slash commands (anonymized from production)
       ├─ ast-rules/             # optional TypeScript ast-grep rules
-      └─ scripts/               # 13 production scripts (guards, checkers, dev-up)
+      └─ scripts/               # 18 production scripts (guards, checkers, dev-up)
 ```
 
 ---
@@ -186,14 +196,29 @@ All gates are driven entirely by `stack.json`. None are hardcoded — all adapt 
 | **SAST / dep-audit** | Configurable | Configurable | `security.sast` / `security.depAudit` |
 | **Security review (guided)** | On-demand (`/security-review`) | No — human/AI review | `security.review` |
 
-### Secret Scan — PreToolUse (not PostToolUse)
+### Secret Scan — two things that must both be right
 
-`core/hooks/scripts/secret-scan.sh` intercepts `git commit` via **`PreToolUse`** and blocks it
-(exit 1) if staged files match secret patterns.
+The template wires **`core/hooks/scripts/secret-scan-guard.py`** on `git commit`. That guard is
+a thin wrapper around `secret-scan.sh`, which does the actual matching. Two independent mistakes
+each turn this gate into a silent no-op, and the framework has shipped both:
 
-**Why `PreToolUse` and not `PostToolUse`?** `PostToolUse` fires *after* the commit completes.
-At that point `git diff --cached` is already empty — no staged changes to scan.
-A secret-scan hook wired as `PostToolUse` is a no-op. The correct event is `PreToolUse`.
+**1. Only exit code 2 denies.** Claude Code treats a `PreToolUse` exit of **2** as *deny*; any
+other non-zero code is reported as a hook error and **the tool runs anyway**. `secret-scan.sh`
+exits **1** when it finds a secret — correct for a standalone scanner, useless as a gate — and
+the wrapper is what maps that 1 to a 2. This is the bug fixed in 1.3.2. If you write your own
+guard, return 2 or it blocks nothing. Do not "fix" the scanner to exit 2: `tests/test-core-guards.py`
+asserts the 1, and the split is deliberate so the scanner stays usable from CI.
+
+**2. `PreToolUse`, never `PostToolUse`.** `PostToolUse` fires *after* the commit completes, when
+`git diff --cached` is already empty — nothing left to scan.
+
+Patterns detected (from `core/security/secret-patterns.txt`): PEM private keys, AWS AKIA tokens,
+Google OAuth credentials, Anthropic `sk-ant-` tokens, OpenAI `sk-proj-` tokens, Slack `xox*`
+tokens, Meta long-lived tokens, GitHub PATs, Stripe live/test keys.
+
+> **Known gap (not yet fixed):** `secret-scan-guard.py` hardcodes the path to `secret-scan.sh`
+> instead of reading `security.secretScan` from the manifest, so pointing that key at your own
+> scanner has no effect today. Either use the bundled scanner or wire your own hook directly.
 
 Patterns detected (from `core/security/secret-patterns.txt`): PEM private keys, AWS AKIA tokens,
 Google OAuth credentials, Anthropic `sk-ant-` tokens, OpenAI `sk-proj-` tokens, Slack `xox*`
@@ -413,7 +438,7 @@ grep -rIE 'tsc|knip|eslint|firestore' core/hooks/scripts/
 ### core/hooks/
 
 `core/hooks/settings.template.json` — copy to `.claude/settings.json`. Pre-wired:
-- `PreToolUse` (Bash): `canonical-guard.py` (blocks `environment.forbiddenCommands` with the fix inline) + `pre-push-guard.py` (push policy + quality gate, blocking) + `secret-scan.sh` (blocking on commit) + `filter-verbose-guard.py` (non-blocking; collapses passing output per `context.filterVerbose`)
+- `PreToolUse` (Bash): `canonical-guard.py` (blocks `environment.forbiddenCommands` with the fix inline) + `pre-push-guard.py` (push policy + quality gate, blocking) + `secret-scan-guard.py` (blocking on commit; wraps `secret-scan.sh` and maps its exit 1 to the exit 2 that actually denies) + `filter-verbose-guard.py` (non-blocking; collapses passing output per `context.filterVerbose`)
 - `Stop`: `ratchet-guard.py` (dead-code ratchet, blocking, scope-by-diff via `CHANGED_FILES`) + `close-guard.py` (close protocol, reminds once)
 
 `core/hooks/scripts/read-config.py` — the manifest reader. Takes a dotted key path
@@ -436,30 +461,54 @@ project: `python scripts/sync-example.py <project-root> examples/nextjs-firebase
 | Path | Description |
 |---|---|
 | `stack.json` | Fully-filled manifest: 8 commands, sentrux as structural ratchet, design + cron-doc gates, `push: operator-only`, `closeProtocol: blocking`, 4 `forbiddenCommands` |
-| `settings.json` | Production `.claude/settings.json`: 3 blocking `PreToolUse` hooks, 6 advisory `PostToolUse` hooks, 4 blocking `Stop` hooks |
-| `rules/` | 12 domain rules (anonymized from production) |
+| `CLAUDE.md` | The production brain file — 551 words after the 2026-08-09 audit (see below) |
+| `settings.json` | Production `.claude/settings.json`: 6 blocking `PreToolUse` hooks, 6 advisory `PostToolUse` hooks, 6 blocking `Stop` hooks |
+| `rules/` | 7 domain rules (anonymized from production) |
+| `archive/rules/` | 6 rules the source project retired — kept for reference, not part of the live setup |
 | `commands/` | 15 slash commands (anonymized from production) |
 | `ast-rules/` | TypeScript ast-grep rules — optional structural enforcement add-on |
-| `scripts/` | 13 production scripts (guards, baseline checkers, secret scan, dev-up) |
+| `scripts/` | 18 production scripts (guards, baseline checkers, secret scan, dev-up) |
 | `sync-manifest.json` | File map + sanitization rules for `scripts/sync-example.py` |
 
-### Rules (13)
+### What the 2026-08-09 audit changed, and why it is worth copying
+
+The source project audited every standing instruction against three questions — *would a
+competent agent already do this? is it correcting a weakness that a gate already covers? does
+it conflict with something else?* — and went from **11,381 to 2,466 words** of always-loaded
+context (−78%): 12 rules down to 3, and a `CLAUDE.md` from 3,300 to 551 words.
+
+The organizing principle, and the reason this mirror now ships an `archive/`:
+
+> **What a blocking hook already enforces does not need to be written down.** A ratchet or a
+> guard delivers its correction at the exact moment of the mistake, with the fix in the
+> message. Prose that narrates the same rule is paid for in every session and read in none.
+
+What survives is what no script can catch: environment facts, domain semantics, and
+conventions an agent would get wrong by default. That is why `regional-thresholds.md` is still
+mirrored even though its source file was archived — "in ARS a ROAS of 50-500x is normal, not a
+bug" is the least deducible fact in the whole setup, and no gate can measure it.
+
+**Do not copy this ratio into `core/`.** In the source project the rules load every session, so
+each word costs daily; in `core/` they do not load at all, and every gate behind them is opt-in
+via `stack.json` (absent key = silent no-op). A rule that is redundant in a repo with the hooks
+wired can be the only safety net in a repo without them.
+
+### Rules (7 live + 6 archived)
 
 | Rule | Domain |
 |---|---|
-| `alert-engine-pattern.md` | Pure-computation contract: no DB/network in `evaluate()` |
-| `ci-zero-failure.md` | What CI checks, where each check lives, SKIP_PREPUSH rules |
-| `code-quality-ratchets.md` | any-type ratchet, large files (>800 lines), dead-code, design contract |
-| `console-error-pattern.md` | `console.error` prohibited in lib/api; `reportError()` for runtime errors |
-| `cron-security.md` | `validateCronSecret()` first, `withErrorReporting()` wrap, idempotency, maxDuration |
-| `firestore-conventions.md` | 4 doc ID patterns, ignoreUndefinedProperties, index drift prevention |
-| `folder-organization.md` | scripts/ subcategories, import path conventions |
-| `operating-procedure.md` | App-specific routing (alert engines, cron, channel_snapshots, ARS currency) + close protocol |
-| `regional-thresholds.md` | ARS vs USD scale differences for ROAS/CPA/spend thresholds |
+| `firestore-conventions.md` | 4 doc ID patterns + the 5-consumer checklist for a new profile field |
 | `windows-environment.md` | Canonical vs forbidden path per operation on the dev machine (lint, DB access, shell dialects) |
-| `ui-delivery-checklist.md` | Deterministic UI-delivery checklist (nav wiring, empty states, mirrors) + canonical smoke-test recipe |
-| `incident-triage.md` | Triage protocol + 11-row living dictionary of known errors (cause → fix) |
+| `ui-delivery-checklist.md` | UI-delivery checklist (nav wiring, empty states, mirrors, tooltips) + canonical smoke-test recipe |
+| `alert-engine-pattern.md` | Pure-computation contract: no DB/network in `evaluate()` |
+| `cron-security.md` | `validateCronSecret()` first, `withErrorReporting()` wrap, idempotency, maxDuration |
+| `regional-thresholds.md` | ARS vs USD scale differences for ROAS/CPA/spend thresholds |
 | `graphify.md` | Real graphify wiring: `python -m graphify` (Windows shim), root-scoped graph, 3 hooks, imports-only blind spot |
+
+Archived under `archive/rules/` — each one is now either enforced by a hook that carries its
+own fix, or compressed to a line or two inside `CLAUDE.md`: `ci-zero-failure.md`,
+`code-quality-ratchets.md`, `console-error-pattern.md`, `folder-organization.md`,
+`incident-triage.md`, `operating-procedure.md`.
 
 ### Commands (15)
 

@@ -135,12 +135,17 @@ function main() {
     // only regressions in those files BLOCK. Regressions inherited from other
     // sessions' WIP downgrade to a warning — the global floor is still enforced
     // by CI, which runs without CHANGED_FILES and keeps the strict behavior.
+    // El match es case-insensitive: los paths llegan de dos fuentes distintas
+    // (transcript / git log vs. knip) y en Windows la caja no siempre coincide.
+    // Un mismatch acá no se ve: degrada en silencio a "deuda heredada" y deja
+    // de bloquear.
     const changedEnv = process.env.CHANGED_FILES;
     const changedSet = changedEnv
-        ? new Set(changedEnv.split("\n").map(f => f.trim().replace(/\\/g, "/")).filter(Boolean))
+        ? new Set(changedEnv.split("\n").map(f => f.trim().replace(/\\/g, "/").toLowerCase()).filter(Boolean))
         : null;
-    const own = changedSet ? regressed.filter(r => changedSet.has(r.file)) : regressed;
-    const inherited = changedSet ? regressed.filter(r => !changedSet.has(r.file)) : [];
+    const isOwn = r => changedSet.has(r.file.replace(/\\/g, "/").toLowerCase());
+    const own = changedSet ? regressed.filter(isOwn) : regressed;
+    const inherited = changedSet ? regressed.filter(r => !isOwn(r)) : [];
 
     if (regressed.length > 0 || totalDelta > 0) {
         const blocking = own.length > 0 || !changedSet;

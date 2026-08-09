@@ -7,11 +7,11 @@ Every route under `/api/cron/**` is security-sensitive. These rules are non-nego
 Every cron route MUST call `validateCronSecret()` as its FIRST action:
 
 ```ts
-import { validateCronSecret } from '@/lib/cron-security';
+import { validateCronSecret } from '@/lib/cron-auth';
 
 export async function POST(req: NextRequest) {
-  const auth = await validateCronSecret(req);
-  if (!auth.valid) return auth.response;
+  const authError = validateCronSecret(req);   // síncrono → NextResponse | null
+  if (authError) return authError;
   // ... rest of handler
 }
 ```

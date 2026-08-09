@@ -4,9 +4,15 @@
 Checks, exit 1 on any failure:
   1. Every file in core/rules/ and core/commands/ is mentioned in README.md.
   2. Every hook script referenced by core/hooks/settings.template.json exists.
-  3. No file references the retired example dir name (examples must stay generic).
+  3. No file leaks a private name, project name or developer path (this repo is
+     public — the example must stay generic).
   4. stack.example.json and every examples/*/stack.json use only top-level keys
      declared in stack.schema.json.
+  5. Every mirrored file under examples/<ex>/{rules,commands,scripts} is declared
+     in that example's sync-manifest.json, either in "map" (synced from the source
+     project) or in "unsynced" (deliberately example-only). Without this, a file
+     can sit in the mirror for months without ever being synced or reviewed —
+     which is exactly how the mirror drifted from its source.
 """
 import io
 import json
@@ -15,7 +21,16 @@ import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RETIRED_NAMES = [r"worker-brain"]
+
+# Private/identifying strings that must never appear in this public repo.
+# The sanitizer in sync-example.py strips these on the way in; this gate is the
+# backstop for files it does not cover (anything outside a manifest "map").
+RETIRED_NAMES = [
+    r"worker-brain",
+    r"Worker[ _-]?Brain",
+    r"ai-analyzer",
+    r"Users[\\/]gabri",
+]
 
 errors = []
 
@@ -75,6 +90,35 @@ for p in stacks:
     extra = set(data.keys()) - allowed
     if extra:
         errors.append(f"{os.path.relpath(p, REPO)}: keys not in schema: {sorted(extra)}")
+
+# 5. every mirrored file is declared in its example's sync-manifest
+MIRRORED_DIRS = ("rules", "commands", "scripts")
+if os.path.isdir(examples_dir):
+    for ex in sorted(os.listdir(examples_dir)):
+        manifest_path = os.path.join(examples_dir, ex, "sync-manifest.json")
+        if not os.path.isfile(manifest_path):
+            continue
+        try:
+            manifest = json.loads(read(manifest_path))
+        except Exception as e:
+            errors.append(f"examples/{ex}/sync-manifest.json: invalid JSON ({e})")
+            continue
+        declared = set(manifest.get("map", {}).keys()) | set(manifest.get("unsynced", []))
+        for sub in MIRRORED_DIRS:
+            d = os.path.join(examples_dir, ex, sub)
+            if not os.path.isdir(d):
+                continue
+            for dirpath, _dirnames, filenames in os.walk(d):
+                for fn in filenames:
+                    rel = os.path.relpath(
+                        os.path.join(dirpath, fn), os.path.join(examples_dir, ex)
+                    ).replace("\\", "/")
+                    if rel not in declared:
+                        errors.append(
+                            f"examples/{ex}/{rel} is not declared in sync-manifest.json "
+                            f"(add it to \"map\" to sync it, or to \"unsynced\" if it is "
+                            f"example-only on purpose)"
+                        )
 
 if errors:
     print("doc-sync FAILED:")

@@ -15,8 +15,8 @@ cp -r core/ your-project/.claude/core/
 `core/` is entirely language-agnostic. No edits needed.
 It contains:
 - `CLAUDE.template.md` — brain template with `{{placeholders}}`
-- `rules/` — 8 universal rules (operating-procedure, ratchet-philosophy, security-gates, commands-encode-workflows, close-protocol, environment-canonical, incident-triage, learning-loop)
-- `commands/` — 5 universal slash commands
+- `rules/` — 10 universal rules (operating-procedure, ratchet-philosophy, security-gates, commands-encode-workflows, close-protocol, environment-canonical, incident-triage, learning-loop, graphify, subagent-economics)
+- `commands/` — 6 universal slash commands
 - `hooks/` — hook scripts and settings template
 - `security/` — secret patterns and SAST adapter docs
 
@@ -60,7 +60,7 @@ cp .claude/core/hooks/settings.template.json .claude/settings.json
 The template pre-wires:
 - `PreToolUse` (Bash): `canonical-guard.py` — **blocking** (reads `environment.forbiddenCommands`; no-op if absent)
 - `PreToolUse` (Bash `git push`): `pre-push-guard.py` — **blocking** (push policy + quality gate)
-- `PreToolUse` (Bash `git commit`): `secret-scan.sh` — **blocking**
+- `PreToolUse` (Bash `git commit`): `secret-scan-guard.py` — **blocking** (wraps `secret-scan.sh`; the wrapper is what maps a hit to exit 2, the only code that actually denies)
 - `Stop`: `ratchet-guard.py` (dead-code ratchet, scope-by-diff) — **blocking**
 - `Stop`: `close-guard.py` (close protocol) — **blocking once** (no-op unless `gates.closeProtocol: "blocking"`)
 
@@ -68,7 +68,18 @@ All `PreToolUse` hooks run **before** the tool action completes, so they can
 actually block. The secret scan must be `PreToolUse` — `PostToolUse` fires after
 the commit is done and `git diff --cached` is already empty.
 
-Adjust script paths if your scripts live somewhere other than `.claude/core/hooks/scripts/`.
+The template resolves every hook under `.claude/core/hooks/scripts/`, which is exactly where
+Step 1 puts them — copy both verbatim and they line up. **If you install `core/` anywhere else,
+edit the paths in `settings.json` to match.** A hook whose path does not resolve makes `python`
+exit 2, and exit 2 means *deny*: an install with the wrong paths blocks every Bash call and
+every turn close, with a Python error that never mentions this framework.
+
+Verify before trusting the setup:
+
+```bash
+python .claude/core/hooks/scripts/read-config.py language   # should print your language
+echo '{}' | python .claude/core/hooks/scripts/canonical-guard.py; echo "exit=$?"  # expect 0
+```
 
 ---
 
@@ -170,14 +181,15 @@ EOF
 
 ## Reference: ExampleApp
 
-`examples/nextjs-firebase/` is the full, faithful reference for a TypeScript/Next.js 14/Firebase/Vercel
+`examples/nextjs-firebase/` is the full, faithful reference for a TypeScript/Next.js 15/Firebase/Vercel
 production SaaS. Use it to understand what a fully-adopted setup looks like:
 
 - A complete `stack.json` with all gates wired (8 commands, design + cron-doc gates, sentrux, push policy, close protocol, forbidden commands)
-- 12 domain rules across alert engines, cron security, Firestore conventions, currency thresholds, environment paths, UI delivery, incident triage
+- The real `CLAUDE.md` — 551 words, after an audit that cut the always-loaded context by 78%
+- 7 domain rules (alert engines, cron security, Firestore conventions, currency thresholds, environment paths, UI delivery), plus 6 more under `archive/rules/` that the project retired once a hook covered them
 - 15 slash commands from scaffolding to backfill to AI prompt versioning
-- 13 hooks: 3 blocking `PreToolUse`, 6 advisory `PostToolUse`, 4 blocking `Stop`
-- 13 production scripts (guards, baseline checkers, dev-up) and TypeScript ast-grep rules as an optional add-on
+- 18 hooks: 6 blocking `PreToolUse`, 6 advisory `PostToolUse`, 6 blocking `Stop`
+- 18 production scripts (guards, baseline checkers, dev-up) and TypeScript ast-grep rules as an optional add-on
 - `sync-manifest.json` — update the mirror from the source project in 1 command: `python scripts/sync-example.py <project-root> examples/nextjs-firebase` (sanitization + leak check built in)
 
 ---

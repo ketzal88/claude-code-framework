@@ -5,7 +5,31 @@
       "Write(.claude/)",
       "Edit(.claude/)",
       "Write(CLAUDE.md)",
-      "Edit(CLAUDE.md)"
+      "Edit(CLAUDE.md)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm run lint)",
+      "Bash(npm run test:unit)",
+      "Bash(npm run test:alerts)",
+      "Bash(npm run check:design)",
+      "Bash(npm run check:page-shell)",
+      "Bash(npm run check:dead-code)",
+      "Bash(npm run check:cron-doc)",
+      "Bash(graphify query *)",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_find",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__plugin_playwright_playwright__browser_network_requests",
+      "mcp__nextjs-firebase__get_client_brief",
+      "mcp__nextjs-firebase__get_channel_metrics",
+      "mcp__nextjs-firebase__get_active_ads",
+      "mcp__claude_ai_ExampleApp__get_client_brief",
+      "mcp__claude_ai_ExampleApp__get_channel_metrics",
+      "mcp__claude_ai_ExampleApp__get_active_ads",
+      "mcp__claude_ai_Shopify__graphql_schema",
+      "mcp__claude_ai_Facebook__ads_get_ad_entities"
     ]
   },
   "hooks": {
@@ -26,6 +50,29 @@
           {
             "type": "command",
             "command": "python -c \"import json,sys,subprocess,os; d=json.load(sys.stdin); cmd=d.get('tool_input',{}).get('command','') or ''; root=os.environ.get('CLAUDE_PROJECT_DIR','.'); (sys.exit(subprocess.call(['bash', os.path.join(root,'scripts','check-no-secrets.sh')], cwd=root))) if cmd.lstrip().startswith('git commit') else None\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/graphify-nudge.py"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/pre-bash-filter-verbose.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/graphify-nudge.py"
           }
         ]
       }
@@ -52,7 +99,7 @@
           },
           {
             "type": "command",
-            "command": "python -c \"\nimport json,sys,re\nd=json.load(sys.stdin)\np=(d.get('tool_input',{}).get('file_path','') or '').replace('\\\\\\\\','/')\nif not p.endswith('.tsx'): sys.exit(0)\nif '/src/app/api/' in p: sys.exit(0)\ntry:\n    content=open(p,encoding='utf-8',errors='replace').read()\nexcept: sys.exit(0)\nhooks=re.compile(r'\\\\b(useState|useEffect|useRef|useCallback|useMemo|useContext|useReducer)\\\\s*[(<]')\nhas_directive=re.compile(r'''['\\\"]use client['\\\"]''',re.MULTILINE)\nif hooks.search(content) and not has_directive.search(content):\n    print('\\u2192 AVISO: Este componente usa hooks React sin \\\"use client\\\" — fallará el build de Vercel si lo importa un Server Component.',file=sys.stderr)\n\""
+            "command": "python -c \"\nimport json,sys,re\nd=json.load(sys.stdin)\np=(d.get('tool_input',{}).get('file_path','') or '').replace('\\\\\\\\','/')\nif not p.endswith('.tsx'): sys.exit(0)\nif '/src/app/api/' in p: sys.exit(0)\ntry:\n    content=open(p,encoding='utf-8',errors='replace').read()\nexcept: sys.exit(0)\nhooks=re.compile(r'\\\\b(useState|useEffect|useRef|useCallback|useMemo|useContext|useReducer)\\\\s*[(<]')\nhas_directive=re.compile(r'''['\\\"]use client['\\\"]''',re.MULTILINE)\nif hooks.search(content) and not has_directive.search(content):\n    print('\\u2192 AVISO: Este componente usa hooks React sin \\\"use client\\\" \u2014 fallar\u00e1 el build de Vercel si lo importa un Server Component.',file=sys.stderr)\n\""
           }
         ]
       },
@@ -86,7 +133,17 @@
           },
           {
             "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/stop-page-shell-guard.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/stop-dirty-tree-guard.py",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python scripts/stop-graphify-refresh.py",
             "timeout": 15
           }
         ]
