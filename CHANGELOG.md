@@ -5,6 +5,15 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.6 - 2026-11-26
+
+Security: alias resolution now fails closed (review of 1.5.5).
+
+- `git_target.py`: a non-builtin subcommand is OPAQUE when the same command can change git config (`git config`, `GIT_CONFIG*`, `GIT_DIR`, `HOME=`, `XDG_CONFIG_HOME`, `--config-env`, `include`, a `.git/` path), so `git config alias.p push && git p` and `GIT_CONFIG_COUNT=1 ... git p` are caught. Taint carries across segments and into nested shells.
+- `git_target.py`: `--config-env=alias.*` is treated like `-c alias.*`.
+- `git_target.py`: alias lookup fails closed: an error, an expansion that does not start with a known subcommand (`-c x push`) or an unknown name gives OPAQUE. External `git-*` commands on PATH (`git lfs`) still resolve.
+- Tests: 80 cases.
+
 ## 1.5.5 - 2026-11-26
 
 Security: three ways to hide a push from the guards, found in review.

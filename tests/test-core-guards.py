@@ -238,6 +238,27 @@ def config_cases():
             ("pre-push: config alias resolves to push", hook("pre-push-guard.py", bash("git p")), 2),
             ("pre-push: shell alias fails closed", hook("pre-push-guard.py", bash("git sp")), 2),
             ("pre-push: harmless alias passes", hook("pre-push-guard.py", bash("git st")), 0),
+            ("pre-push: builtin still passes", hook("pre-push-guard.py", bash("git status")), 0),
+            ("pre-push: alias defined in the same command",
+             hook("pre-push-guard.py", bash("git config alias.zz push && git zz")), 2),
+            ("pre-push: harmless alias redefined in the same command",
+             hook("pre-push-guard.py", bash("git config alias.st push; git st")), 2),
+            ("pre-push: --config-env alias",
+             hook("pre-push-guard.py", bash("git --config-env=alias.q=X q")), 2),
+            ("pre-push: GIT_CONFIG_PARAMETERS alias",
+             hook("pre-push-guard.py", bash("GIT_CONFIG_PARAMETERS=\"'alias.q=push'\" git q")), 2),
+            ("pre-push: GIT_CONFIG_COUNT alias",
+             hook("pre-push-guard.py", bash(
+                 "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.q GIT_CONFIG_VALUE_0=push git q")), 2),
+            ("pre-push: exported HOME before an alias",
+             hook("pre-push-guard.py", bash("export HOME=/tmp/x; git st")), 2),
+            ("pre-push: unknown subcommand fails closed",
+             hook("pre-push-guard.py", bash("git definitely-not-a-cmd")), 2),
+        ]
+        subprocess.run(["git", "config", "alias.op", "-c x=y push"], cwd=tmp, env=ENV)
+        checks += [
+            ("pre-push: alias starting with an option fails closed",
+             hook("pre-push-guard.py", bash("git op")), 2),
         ]
 
         # close-guard, session-scoped: two dirty code files, only one touched by this session
