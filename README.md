@@ -166,7 +166,7 @@ Start with one gate and expand.
 **Session-friction layer** (added 2026-07, from an audit of 100+ production sessions):
 `gates.push: "operator-only"` makes every agent `git push` block instantly with the correct
 close instruction (the push belongs to the human operator); `gates.closeProtocol: "blocking"`
-reminds once when a turn ends with uncommitted code; `environment.forbiddenCommands` blocks
+reminds once when a turn ends with uncommitted code (and, with `gates.closeUnpushed: "report"`, with commits never pushed); `environment.forbiddenCommands` blocks
 the commands that always fail on this machine with the fix inline (0-turn self-correction);
 and `ratchet-guard.py` now passes `CHANGED_FILES` so ratchet commands can block only on
 regressions the session itself introduced, downgrading inherited debt to a warning (CI still

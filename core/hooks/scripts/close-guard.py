@@ -22,6 +22,13 @@ Also checks repos nested one level down (a monorepo of independent repos:
 work committed in the parent can leave a child dirty), and mentions commits
 that are ready to push so the final message can report them.
 
+1.5.3 - gates.closeUnpushed = "report": commits that never got pushed (root
+and nested repos) also trigger the reminder, even with a clean tree. The agent
+cannot fix them when push is operator-only, so it only REPORTS them; the close
+line is the one place where "committed" and "pushed" stop meaning the same
+thing. Found in the wild: a nested repo sat 3 commits ahead of origin for
+weeks because nothing ever said so out loud.
+
 Blocks (exit 2) only ONCE per close (stop_hook_active breaks the loop).
 If the dirty files are deliberate WIP, the agent says so explicitly in its
 final message and closes on the retry.
@@ -31,7 +38,7 @@ Skip conditions (exit 0):
   - SKIP_COMMITCHECK=1 (explicit bypass).
   - gates.closeProtocol not configured.
   - no code file of this session left dirty (docs/config never count:
-    .md, docs/, .claude/, .github/).
+    .md, docs/, .claude/, .github/) and no unpushed commit to report.
 """
 import json
 import os
@@ -123,44 +130,50 @@ def main():
         return 0
 
     root = os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()
+    subs = nested_repos(root)
     dirty = dirty_code(root)
-    for sub in nested_repos(root):
+    for sub in subs:
         dirty += [sub + "/" + p for p in dirty_code(os.path.join(root, sub))]
 
-    if not dirty:
-        return 0
+    mine, foreign = [], []
+    if dirty:
+        split = session_files.attribute(dirty, payload.get("transcript_path"), root)
+        mine, foreign = (dirty, []) if split is None else split  # unreadable: 1.4 behaviour
 
-    split = session_files.attribute(dirty, payload.get("transcript_path"), root)
-    if split is None:
-        mine, foreign = dirty, []  # transcript unreadable: 1.4 behaviour
-    else:
-        mine, foreign = split
+    ahead = [(".", unpushed(root))] + [(sub, unpushed(os.path.join(root, sub))) for sub in subs]
+    ahead = [(name, n) for name, n in ahead if n]
+    report_ahead = cfg("gates.closeUnpushed") == "report"
 
-    if not mine:
-        return 0  # everything dirty belongs to someone else: not this session's close
+    if not mine and not (report_ahead and ahead):
+        return 0  # nothing of this session's to commit, nothing to report
 
-    ahead = unpushed(root)
     w = sys.stderr.write
-    w("[close-protocol] " + str(len(mine)) + " code file(s) of this session left uncommitted:\n")
-    for p in mine[:10]:
-        w("  " + p + "\n")
-    if len(mine) > 10:
-        w("  ... and " + str(len(mine) - 10) + " more\n")
-    if foreign:
-        w("(" + str(len(foreign)) + " other dirty file(s) were not touched by this session:"
-          " ignored. Do not commit them and do not use `git add -A`.)\n")
+    if mine:
+        w("[close-protocol] " + str(len(mine)) + " code file(s) of this session left uncommitted:\n")
+        for p in mine[:10]:
+            w("  " + p + "\n")
+        if len(mine) > 10:
+            w("  ... and " + str(len(mine) - 10) + " more\n")
+        if foreign:
+            w("(" + str(len(foreign)) + " other dirty file(s) were not touched by this session:"
+              " ignored. Do not commit them and do not use `git add -A`.)\n")
+        w(
+            "\nBefore closing, pick ONE:\n"
+            "  a) Finished work -> run the commit-checkpoint flow, `git add` THESE paths\n"
+            "     by name, commit, and end your message with 'committed: <sha> - N\n"
+            "     commit(s) ready to push'. NEVER run git push yourself unless the\n"
+            "     push policy says so.\n"
+            "  b) Deliberate WIP -> say so explicitly in your final message (which\n"
+            "     files and why) and close.\n"
+        )
     if ahead:
-        w("(" + str(ahead) + " commit(s) already ahead of upstream.)\n")
-    w(
-        "\nBefore closing, pick ONE:\n"
-        "  a) Finished work -> run the commit-checkpoint flow, `git add` THESE paths\n"
-        "     by name, commit, and end your message with 'committed: <sha> - N\n"
-        "     commit(s) ready to push'. NEVER run git push yourself unless the\n"
-        "     push policy says so.\n"
-        "  b) Deliberate WIP -> say so explicitly in your final message (which\n"
-        "     files and why) and close.\n"
-        "\nThis reminder fires once per close. Bypass: SKIP_COMMITCHECK=1.\n"
-    )
+        w("\n[close-protocol] commit(s) not pushed yet:\n")
+        for name, n in ahead:
+            w("  " + name + ": " + str(n) + " commit(s) ahead of upstream\n")
+        if report_ahead:
+            w("Do not push them unless the push policy says so. Name each repo and its\n"
+              "count in your final message, and say whose work it is if not yours.\n")
+    w("\nThis reminder fires once per close. Bypass: SKIP_COMMITCHECK=1.\n")
     return 2
 
 

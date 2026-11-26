@@ -5,6 +5,25 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.3 - 2026-11-26
+
+Push policy across nested repos, and reporting unpushed commits at close.
+
+- `pre-push-guard.py`: the root `stack.json` is the floor. 1.5.2 read the
+  policy only from the first push target's manifest, so a nested
+  `{"gates": {}}` dropped `operator-only`, and the second push of
+  `git push && git -C sub push` was never checked. Now every target is
+  checked against the root and its own manifest (either one saying
+  `operator-only` blocks), checks run per target, and a target without
+  `prePush.steps` inherits the root's.
+- `git_target.py`: `--git-dir` and `--work-tree` (also in `=` form) move the
+  target directory like `-C`.
+- `close-guard.py`: new `gates.closeUnpushed: "report"`. Commits ahead of
+  upstream (root and nested repos) trigger the reminder even with a clean
+  tree; the agent reports them instead of pushing. Added to the schema.
+- Tests: 62 cases (policy floor, multi-target, `--git-dir`/`--work-tree`,
+  close report on a bare-remote fixture).
+
 ## 1.5.2 - 2026-11-26
 
 Second security pass on the command parser, and per-repo manifests on push.

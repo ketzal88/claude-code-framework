@@ -117,6 +117,11 @@
           "type": "string",
           "enum": ["blocking", "off"],
           "description": "blocking = the close-guard Stop hook reminds ONCE when a turn ends with uncommitted code files: commit + report sha, or explicitly declare WIP. See core/rules/close-protocol.md. Absent/off = no reminder."
+        },
+        "closeUnpushed": {
+          "type": "string",
+          "enum": ["report", "off"],
+          "description": "report = with closeProtocol blocking, commits not pushed yet (root and nested repos) also trigger the close reminder, even on a clean tree, so the final message names them. Absent/off = they are only mentioned when there are uncommitted files."
         }
       },
       "additionalProperties": false

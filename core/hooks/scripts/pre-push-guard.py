@@ -15,6 +15,11 @@ targets. gates.pushWrappers (array of regexes) names project scripts that push
 on your behalf (e.g. "npm run (ship|release)"): they are treated as a push,
 so the operator-only policy cannot be dodged by calling the wrapper.
 
+1.5.3 - ONE POLICY ACROSS NESTED REPOS: every push target is checked, not
+only the first, and the project root manifest is the floor (a nested
+stack.json can tighten gates.push, never loosen it). Steps run per target;
+a target whose manifest lists none inherits the root's.
+
 Input contract (stdin JSON from Claude Code harness):
     { "tool_input": { "command": "git push ..." }, ... }
 """
@@ -44,9 +49,8 @@ import git_target  # noqa: E402
 def cfg(key, repo=None):
     """Read a dotted key from stack.json via read-config.py.
 
-    `repo` is the directory the push runs in: read-config searches upward from
-    it, so a nested repo with its own stack.json gets its own gates, and one
-    without a manifest falls back to the parent's.
+    `repo` is the directory to search upward from. The caller always checks
+    the project root too: a nested manifest adds gates, it never removes them.
     """
     try:
         r = subprocess.run(
@@ -110,6 +114,16 @@ def is_dry_run(args):
     return False
 
 
+def parse_steps(raw):
+    if not raw:
+        return []
+    try:
+        steps = json.loads(raw)
+        return steps if isinstance(steps, list) else [str(steps)]
+    except Exception:
+        return [s.strip() for s in raw.split(",") if s.strip()]
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read().lstrip("\ufeff"))
@@ -143,9 +157,19 @@ def main():
                 continue  # malformed pattern in config: never block on config bugs
     if not real and not wrapper:
         return 0
-    target_dir = real[0][1] if real else git_target.base_dir(payload)
-    if not os.path.isdir(target_dir):
-        target_dir = None
+    # Every distinct directory the command pushes from, plus the project root.
+    # The root manifest is the floor: a stack.json found under a push target
+    # can TIGHTEN the policy for that repo, never loosen it (1.5.3; 1.5.2 read
+    # only the first target's manifest, so a nested `{"gates": {}}` dropped
+    # operator-only and the second push of `git push && git -C x push` was
+    # never looked at).
+    project = os.environ.get("CLAUDE_PROJECT_DIR") or git_target.base_dir(payload)
+    targets = []
+    for d in [d for _a, d in real] or [git_target.base_dir(payload)]:
+        d = d if os.path.isdir(d) else None
+        if d not in targets:
+            targets.append(d)
+    policy_dirs = [project] + [d for d in targets if d]
 
     # -- Push policy (close-protocol) -------------------------------------
     # gates.push = "operator-only" in stack.json => the agent NEVER pushes:
@@ -154,7 +178,7 @@ def main():
     # BEFORE burning minutes of checks on a push the operator will do by
     # hand anyway. Explicit exception: ALLOW_CLAUDE_PUSH=1 (operator asked
     # in chat) -> the full check suite below runs before allowing it.
-    if cfg("gates.push", target_dir) == "operator-only":
+    if any(cfg("gates.push", d) == "operator-only" for d in policy_dirs):
         allow = os.environ.get("ALLOW_CLAUDE_PUSH") == "1" or "ALLOW_CLAUDE_PUSH=1" in push_cmd
         if not allow:
             sys.stderr.write(
@@ -170,8 +194,7 @@ def main():
         return 0  # a wrapper runs its own checks; the policy above is what matters
 
     if os.environ.get("SKIP_PREPUSH") == "1":
-        files = changed_files(target_dir)
-        if all_docs_only(files):
+        if all(all_docs_only(changed_files(d)) for d in targets):
             return 0
         sys.stderr.write(
             "[pre-push] SKIP_PREPUSH=1 rejected: changed files include code.\n"
@@ -179,23 +202,19 @@ def main():
         )
         return 2
 
-    # Resolve steps from manifest
-    steps_raw = cfg("gates.prePush.steps", target_dir)
-    if not steps_raw:
-        return 0  # no manifest or no steps configured
-
-    try:
-        steps = json.loads(steps_raw)
-        if not isinstance(steps, list):
-            steps = [str(steps)]
-    except Exception:
-        steps = [s.strip() for s in steps_raw.split(",") if s.strip()]
-
+    # Resolve steps per target. A target whose own manifest lists no steps
+    # inherits the project's: an empty nested manifest must not skip them.
     checks = []
-    for step in steps:
-        cmd_val = cfg(f"commands.{step}", target_dir) or cfg(f"ratchets.{step}", target_dir)
-        if cmd_val:
-            checks.append((step, cmd_val))
+    for target_dir in targets:
+        steps = parse_steps(cfg("gates.prePush.steps", target_dir))
+        cfg_dir = target_dir
+        if not steps:
+            steps, cfg_dir = parse_steps(cfg("gates.prePush.steps", project)), project
+        for step in steps:
+            cmd_val = cfg(f"commands.{step}", cfg_dir) or cfg(f"ratchets.{step}", cfg_dir)
+            if cmd_val:
+                label = step if len(targets) == 1 else f"{step} @ {os.path.basename(target_dir or project)}"
+                checks.append((label, cmd_val, target_dir))
 
     if not checks:
         return 0
@@ -203,7 +222,7 @@ def main():
     failures = []
     remaining = TIMEOUT_SEC
 
-    for name, check_cmd in checks:
+    for name, check_cmd, target_dir in checks:
         if remaining <= 2:
             failures.append((name, "skipped (budget exhausted)", ""))
             continue

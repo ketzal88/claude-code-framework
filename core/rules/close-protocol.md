@@ -29,6 +29,7 @@ enforce it deterministically.
 |---|---|---|
 | `core/hooks/scripts/pre-push-guard.py` | any `git push` from the agent | `gates.push: "operator-only"` |
 | `core/hooks/scripts/close-guard.py` | Stop with uncommitted code files | `gates.closeProtocol: "blocking"` |
+| `core/hooks/scripts/close-guard.py` | Stop with commits never pushed (optional) | `gates.closeUnpushed: "report"` |
 
 Both follow the framework convention: absent key = silent no-op. The
 close-guard blocks exactly ONCE per close (`stop_hook_active` breaks the
@@ -48,6 +49,19 @@ dirty files are reported as a count, never as yours:
   (it never fails open).
 - Repos nested one level down are checked too, and commits ahead of
   upstream are reported so the operator knows what is waiting to push.
+- With `gates.closeUnpushed: "report"` (1.5.3), unpushed commits alone
+  trigger the reminder, even on a clean tree. The agent does not push
+  them (unless the push policy allows it); it names each repo and its
+  count in the final message.
+
+## One policy for nested repos (1.5.3)
+
+A push can target a nested repo with its own `stack.json`. The root
+manifest is the floor: a nested manifest can tighten the push policy for
+its repo, never loosen it. Every target of a compound command
+(`git push && git -C sub push`, `--git-dir`, `--work-tree`) is checked,
+not only the first. A nested manifest without `prePush.steps` inherits
+the root's steps.
 
 ## Why hooks and not prose
 

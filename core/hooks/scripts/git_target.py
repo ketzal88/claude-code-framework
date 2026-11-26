@@ -218,9 +218,17 @@ def _git_calls(cmd, cur, depth):
         sub = None
         while i < len(words):
             w = words[i]
+            if w.startswith(("--git-dir=", "--work-tree=")):
+                w, val = w.split("=", 1)
+                words = words[:i] + [w, val] + words[i + 1:]
             if w in OPTS_WITH_VALUE:
-                if w == "-C" and i + 1 < len(words):
-                    here = _resolve(here, words[i + 1])
+                if i + 1 < len(words):
+                    if w in ("-C", "--work-tree"):
+                        here = _resolve(here, words[i + 1])
+                    elif w == "--git-dir":
+                        # the repo is the parent of a .git dir; a bare repo is its own dir
+                        gd = _resolve(here, words[i + 1])
+                        here = os.path.dirname(gd) if os.path.basename(gd) == ".git" else gd
                 i += 2
                 continue
             if w.startswith("-"):

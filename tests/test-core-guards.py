@@ -209,8 +209,8 @@ def config_cases():
             ("pre-push: -o value is not --dry-run", hook("pre-push-guard.py", bash("git push -o -n origin main")), 2),
             ("pre-push: real -n is a dry run", hook("pre-push-guard.py", bash("git push -n origin main")), 0),
             ("pre-push: env wrapper", hook("pre-push-guard.py", bash("env git push")), 2),
-            ("pre-push: nested repo uses its own stack.json",
-             hook("pre-push-guard.py", bash("git -C inner push")), 0),
+            ("pre-push: nested stack.json cannot loosen the root policy",
+             hook("pre-push-guard.py", bash("git -C inner push")), 2),
             ("pre-push: bash -c too deep fails closed",
              hook("pre-push-guard.py", bash('bash -c "bash -c \\"bash -c \\\\\\"bash -c git push\\\\\\"\\""')), 2),
             ("pre-push: pushWrapper",hook("pre-push-guard.py", bash("npm run release")), 2),
@@ -242,6 +242,77 @@ def config_cases():
         checks.append(("close: unreadable transcript -> 1.4 behaviour",
                        hook("close-guard.py", {"transcript_path": os.path.join(tmp, "nope.jsonl"),
                                                "cwd": tmp}), 2))
+
+        for label, got, expected in checks:
+            total += 1
+            ok = got == expected
+            fails += 0 if ok else 1
+            print(("OK  " if ok else "FAIL") + f" [{label}] exit={got} expected={expected}")
+    return fails, total
+
+
+def policy_cases():
+    """Root WITHOUT a push policy, nested repo WITH operator-only: every push
+    target is checked, and --git-dir / --work-tree move the target. Plus the
+    close-guard's unpushed-commit report. Returns (fails, total)."""
+    import tempfile
+    fails, total = 0, 0
+    git_env = dict(ENV, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                   GIT_COMMITTER_EMAIL="t@t")
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "stack.json"), "w") as fh:
+            json.dump({"gates": {"closeProtocol": "blocking", "closeUnpushed": "report"}}, fh)
+        inner = os.path.join(tmp, "inner")
+        os.makedirs(inner)
+        with open(os.path.join(inner, "stack.json"), "w") as fh:
+            json.dump({"gates": {"push": "operator-only"}}, fh)
+        remote = os.path.join(tmp, "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", remote], env=git_env)
+        subprocess.run(["git", "init", "-q"], cwd=tmp, env=git_env)
+        subprocess.run(["git", "init", "-q"], cwd=inner, env=git_env)
+        env = dict(git_env, CLAUDE_PROJECT_DIR=tmp)
+
+        def hook(script, payload):
+            return subprocess.run(
+                [sys.executable, os.path.join(CORE, script)], input=json.dumps(payload),
+                capture_output=True, text=True, env=env, cwd=tmp,
+            ).returncode
+
+        def bash(cmd):
+            return {"tool_input": {"command": cmd}}
+
+        stop = {"cwd": tmp, "transcript_path": os.path.join(tmp, "none.jsonl")}
+        checks = [
+            ("policy: root push allowed", hook("pre-push-guard.py", bash("git push")), 0),
+            ("policy: second target is checked",
+             hook("pre-push-guard.py", bash("git push && git -C inner push")), 2),
+            ("policy: --git-dir moves the target",
+             hook("pre-push-guard.py", bash("git --git-dir=inner/.git push")), 2),
+            ("policy: --work-tree moves the target",
+             hook("pre-push-guard.py", bash("git --work-tree inner push")), 2),
+        ]
+        # Clean trees everywhere: the nested repo ignores all its files, the
+        # root commits its own and pushes the first commit only.
+        with open(os.path.join(inner, ".gitignore"), "w") as fh:
+            fh.write("*\n")
+        with open(os.path.join(tmp, ".gitignore"), "w") as fh:
+            fh.write("inner/\nremote.git/\n")
+
+        def g(*args):
+            subprocess.run(["git"] + list(args), cwd=tmp, env=git_env, capture_output=True)
+
+        g("add", ".gitignore", "stack.json")
+        g("commit", "-q", "-m", "one")
+        g("remote", "add", "origin", remote)
+        g("push", "-q", "-u", "origin", "HEAD:refs/heads/main")
+        g("branch", "-q", "--set-upstream-to=origin/main")
+        checks.append(("close: clean tree, nothing unpushed", hook("close-guard.py", stop), 0))
+        g("commit", "-q", "--allow-empty", "-m", "two")
+        checks.append(("close: unpushed commit reported on a clean tree", hook("close-guard.py", stop), 2))
+        with open(os.path.join(tmp, "stack.json"), "w") as fh:
+            json.dump({"gates": {"closeProtocol": "blocking"}}, fh)
+        g("commit", "-q", "-am", "three")
+        checks.append(("close: unpushed commits silent without closeUnpushed", hook("close-guard.py", stop), 0))
 
         for label, got, expected in checks:
             total += 1
@@ -288,7 +359,9 @@ def main():
     fails += g_fails
     c_fails, c_total = config_cases()
     fails += c_fails
-    total = len(cases) + s_total + g_total + c_total
+    p_fails, p_total = policy_cases()
+    fails += p_fails
+    total = len(cases) + s_total + g_total + c_total + p_total
     print(("PASS" if fails == 0 else "FAIL") + f" — {total - fails}/{total}")
     return 1 if fails else 0
 
