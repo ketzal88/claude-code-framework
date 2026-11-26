@@ -5,6 +5,11 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.4 - 2026-11-26
+
+- `secret-patterns.txt`: Google API keys (`AIza...`), upstreamed from an
+  adopter that had it as a project pattern.
+
 ## 1.5.3 - 2026-11-26
 
 Push policy across nested repos, and reporting unpushed commits at close.
