@@ -57,7 +57,7 @@ claude-code-framework/
 ├─ .github/workflows/ci.yml   # compile + guard tests + doc-sync + schema validation
 ├─ core/
 │  ├─ CLAUDE.template.md      # brain template with {{placeholders}}
-│  ├─ rules/                          # 10 universal rules
+│  ├─ rules/                          # 13 universal rules
 │  │  ├─ operating-procedure.md
 │  │  ├─ ratchet-philosophy.md
 │  │  ├─ security-gates.md
@@ -67,7 +67,10 @@ claude-code-framework/
 │  │  ├─ incident-triage.md           # protocol + living error dictionary
 │  │  ├─ learning-loop.md             # persistent memory that actually persists
 │  │  ├─ graphify.md                  # code knowledge graph: use + blind spots
-│  │  └─ subagent-economics.md        # model tier and fan-out are cost decisions
+│  │  ├─ subagent-economics.md        # model tier and fan-out are cost decisions
+│  │  ├─ context-economics.md         # re-reading context is the bill
+│  │  ├─ evidence-states.md           # six states between "not verified" and "had effect"
+│  │  └─ headless-automation.md       # child sessions, scheduled jobs, hooks
 │  ├─ commands/                       # 6 universal slash commands
 │  │  ├─ commit-checkpoint.md
 │  │  ├─ ci-simulate.md
@@ -77,8 +80,10 @@ claude-code-framework/
 │  │  └─ security-review.md
 │  └─ hooks/
 │     ├─ settings.template.json
-│     └─ scripts/                     # 12 files
+│     └─ scripts/                     # 14 files
 │        ├─ read-config.py            # manifest reader — heart of config-driven
+│        ├─ git_target.py             # shared: finds git calls in compound commands (cd, -C, &&)
+│        ├─ session_files.py          # shared: which files THIS session touched (from the transcript)
 │        ├─ secret-scan.sh            # agnostic regex secret scanner (exits 1 on hit)
 │        ├─ secret-scan-guard.py      # wrapper wired in the template; maps hit -> exit 2 (deny)
 │        ├─ pre-push-guard.py         # gates.prePush.steps + gates.push=operator-only; BLOCKING
@@ -220,9 +225,10 @@ tokens, Meta long-lived tokens, GitHub PATs, Stripe live/test keys.
 > instead of reading `security.secretScan` from the manifest, so pointing that key at your own
 > scanner has no effect today. Either use the bundled scanner or wire your own hook directly.
 
-Patterns detected (from `core/security/secret-patterns.txt`): PEM private keys, AWS AKIA tokens,
-Google OAuth credentials, Anthropic `sk-ant-` tokens, OpenAI `sk-proj-` tokens, Slack `xox*`
-tokens, Meta long-lived tokens, GitHub PATs, Stripe live/test keys.
+**Since 1.5.0** the guard finds a commit anywhere in a compound command (`cd repo && git commit`,
+`git -C repo commit`, `git add -A && git commit`), scans pending files when the add has not run
+yet, scans only added lines (deleting a secret never blocks), and honors a `secret-scan:allow`
+marker for documented false positives. Details in `core/rules/security-gates.md`.
 
 ### Pre-Push Quality Gate — Blocking
 
@@ -423,7 +429,10 @@ grep -rIE 'tsc|knip|eslint|firestore' core/hooks/scripts/
 | `incident-triage.md` | Triage protocol + living error dictionary: never re-derive a solved diagnosis. |
 | `learning-loop.md` | Persistent memory that actually persists: project memory with index, post-run verification of headless automations. |
 | `graphify.md` | Opt-in codebase-graph layer: consult the graph before crawling; imports ≠ runtime coupling; freshness + cost honesty. |
-| `subagent-economics.md` | The model tier is a decision, not a default: declare `model:` on every agent, set the tier per workflow stage, scale the agent count to the question. |
+| `subagent-economics.md` | The model tier is a decision, not a default: declare `model:` on every agent, set the tier per workflow stage, scale the agent count to the question. Model/effort table per task. |
+| `context-economics.md` | Re-reading context is ~98% of spend: one topic per session, short chat, nested-`CLAUDE.md` and heavy-MCP compaction loops, reference tables in skills. |
+| `evidence-states.md` | Six states (not verified, configured, executed, had effect, outcome unknown, failed); verify in the destination; advisory gates print "N inspected" + canary. |
+| `headless-automation.md` | Child sessions (deny list, stripped env, post-run verification), scheduled jobs (login expiry fails silently), hooks as script files, no compressor around `git push`. |
 
 ### core/commands/
 
@@ -439,7 +448,12 @@ grep -rIE 'tsc|knip|eslint|firestore' core/hooks/scripts/
 
 `core/hooks/settings.template.json` — copy to `.claude/settings.json`. Pre-wired:
 - `PreToolUse` (Bash): `canonical-guard.py` (blocks `environment.forbiddenCommands` with the fix inline) + `pre-push-guard.py` (push policy + quality gate, blocking) + `secret-scan-guard.py` (blocking on commit; wraps `secret-scan.sh` and maps its exit 1 to the exit 2 that actually denies) + `filter-verbose-guard.py` (non-blocking; collapses passing output per `context.filterVerbose`)
-- `Stop`: `ratchet-guard.py` (dead-code ratchet, blocking, scope-by-diff via `CHANGED_FILES`) + `close-guard.py` (close protocol, reminds once)
+- `Stop`: `ratchet-guard.py` (dead-code ratchet, blocking, scoped to files this session touched via `CHANGED_FILES`) + `close-guard.py` (close protocol, reminds once, session-scoped)
+
+`core/hooks/scripts/git_target.py` and `session_files.py` are shared modules, not hooks:
+the first parses every git call in a compound command (segments, `cd`, `-C`, env prefixes);
+the second reads the transcript to tell this session's files from other sessions' on a shared
+checkout. Copy them with the rest of `core/`.
 
 `core/hooks/scripts/read-config.py` — the manifest reader. Takes a dotted key path
 (e.g. `commands.typecheck`), walks up the directory tree to find `stack.json`, returns

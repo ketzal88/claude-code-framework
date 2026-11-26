@@ -102,12 +102,111 @@ def secret_scan_guard_cases():
         # 3) the guard only cares about commits — everything else is none of its business
         checks.append(("non-commit ignored", guard("git status").returncode, 0))
 
+        # 1.5.0: the commit is found anywhere in the command, not only at its start
+        checks.append(("compound: status && commit", guard("git status && git commit -m x").returncode, 2))
+        checks.append(("git -C <dir> commit", guard(f'git -C "{tmp}" commit -m x').returncode, 2))
+        checks.append(("cd <dir> && commit", guard(f'cd "{tmp}" && git commit -m x').returncode, 2))
+        subprocess.run(["git", "rm", "-q", "--cached", ".env"], cwd=tmp, env=env)
+        os.remove(os.path.join(tmp, ".env"))
+        checks.append(("clean again", guard("git commit -m x").returncode, 0))
+
+        # pending mode: `git add -A && git commit` scans what the add is about to stage
+        key = "AKIA" + "ABCDEFGHIJKLMNOP"  # split so this file never matches itself
+        with open(os.path.join(tmp, "cfg.txt"), "w") as fh:
+            fh.write("aws = " + key + "\n")
+        checks.append(("add -A && commit, untracked key", guard("git add -A && git commit -m x").returncode, 2))
+        checks.append(("plain commit, key not staged", guard("git commit -m x").returncode, 0))
+
+        # a commit that DELETES a secret is not blocked (only added lines count)
+        subprocess.run(["git", "add", "cfg.txt"], cwd=tmp, env=env)
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed",
+                        "--no-verify"], cwd=tmp, env=env)
+        os.remove(os.path.join(tmp, "cfg.txt"))
+        checks.append(("deleting a secret", guard("git add -A && git commit -m x").returncode, 0))
+
+        # templates with variable names only are allowed
+        with open(os.path.join(tmp, ".env.example"), "w") as fh:
+            fh.write("API_URL=\n")
+        checks.append((".env.example allowed", guard("git add -A && git commit -m x").returncode, 0))
+
+        # explicit allow marker on the line
+        with open(os.path.join(tmp, "fixture.txt"), "w") as fh:
+            fh.write("sample = " + key + "  # secret-scan:allow test fixture\n")
+        checks.append(("secret-scan:allow", guard("git add -A && git commit -m x").returncode, 0))
+
         for label, got, expected in checks:
             total += 1
             ok = got == expected
             fails += 0 if ok else 1
             print(("OK  " if ok else "FAIL")
                   + f" secret-scan-guard.py [{label}] exit={got} expected={expected}")
+    return fails, total
+
+
+def config_cases():
+    """Gates that need their own stack.json: pushWrappers, canonical `unless`,
+    and the session-scoped close-guard. Returns (fails, total)."""
+    import tempfile
+    fails, total = 0, 0
+    with tempfile.TemporaryDirectory() as tmp:
+        stack = {
+            "gates": {"push": "operator-only", "closeProtocol": "blocking",
+                      "pushWrappers": ["(^|[;&|]\\s*)npm run release\\b"]},
+            "environment": {"forbiddenCommands": [
+                {"pattern": "(^|[;&|]\\s*)foo\\s+login\\b", "unless": "--token",
+                 "fix": "Use foo login --token"}]},
+        }
+        with open(os.path.join(tmp, "stack.json"), "w") as fh:
+            json.dump(stack, fh)
+        subprocess.run(["git", "init", "-q"], cwd=tmp, env=ENV)
+        env = dict(ENV, CLAUDE_PROJECT_DIR=tmp)
+
+        def hook(script, payload):
+            return subprocess.run(
+                [sys.executable, os.path.join(CORE, script)], input=json.dumps(payload),
+                capture_output=True, text=True, env=env, cwd=tmp,
+            ).returncode
+
+        def bash(cmd):
+            return {"tool_input": {"command": cmd}}
+
+        checks = [
+            ("pre-push: push inside a compound", hook("pre-push-guard.py", bash("npm test && git push")), 2),
+            ("pre-push: pushWrapper", hook("pre-push-guard.py", bash("npm run release")), 2),
+            ("pre-push: unrelated npm script", hook("pre-push-guard.py", bash("npm run build")), 0),
+            ("canonical: pattern fires", hook("canonical-guard.py", bash("foo login")), 2),
+            ("canonical: unless suppresses", hook("canonical-guard.py", bash("foo login --token $T")), 0),
+            ("canonical: anchored, no false hit", hook("canonical-guard.py", bash("npm view foo login")), 0),
+        ]
+
+        # close-guard, session-scoped: two dirty code files, only one touched by this session
+        for name in ("mine.ts", "theirs.ts"):
+            with open(os.path.join(tmp, name), "w") as fh:
+                fh.write("export const x = 1\n")
+        transcript = os.path.join(tmp, "transcript.jsonl")
+
+        def write_transcript(paths):
+            with open(transcript, "w") as fh:
+                fh.write(json.dumps({"type": "user", "timestamp": "2026-01-01T00:00:00Z"}) + "\n")
+                for p in paths:
+                    fh.write(json.dumps({"message": {"content": [{
+                        "type": "tool_use", "name": "Write",
+                        "input": {"file_path": os.path.join(tmp, p)}}]}}) + "\n")
+
+        stop = {"transcript_path": transcript, "cwd": tmp}
+        write_transcript(["mine.ts"])
+        checks.append(("close: own dirty file blocks", hook("close-guard.py", stop), 2))
+        write_transcript([])
+        checks.append(("close: only foreign dirty files", hook("close-guard.py", stop), 0))
+        checks.append(("close: unreadable transcript -> 1.4 behaviour",
+                       hook("close-guard.py", {"transcript_path": os.path.join(tmp, "nope.jsonl"),
+                                               "cwd": tmp}), 2))
+
+        for label, got, expected in checks:
+            total += 1
+            ok = got == expected
+            fails += 0 if ok else 1
+            print(("OK  " if ok else "FAIL") + f" [{label}] exit={got} expected={expected}")
     return fails, total
 
 
@@ -146,7 +245,9 @@ def main():
     fails += s_fails
     g_fails, g_total = secret_scan_guard_cases()
     fails += g_fails
-    total = len(cases) + s_total + g_total
+    c_fails, c_total = config_cases()
+    fails += c_fails
+    total = len(cases) + s_total + g_total + c_total
     print(("PASS" if fails == 0 else "FAIL") + f" — {total - fails}/{total}")
     return 1 if fails else 0
 

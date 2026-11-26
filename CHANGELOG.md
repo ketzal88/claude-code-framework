@@ -5,6 +5,61 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.0 - 2026-11-26
+
+**Adopters:** re-copy `core/` (two new shared modules, `git_target.py` and
+`session_files.py`, must sit next to the hooks). No `settings.json` change is
+required. If your copy of `secret-scan-guard.py` exits 1 on a hit, or your
+graphify Stop hook spawns an inline `python -c`, you are on a pre-1.4 copy:
+re-sync, because neither blocks or refreshes reliably.
+
+**Fixed: gates that a compound command walked around**
+- `secret-scan-guard.py` only scanned commands that *started* with
+  `git commit`. `git add -A && git commit`, `cd repo && git commit` and
+  `git -C repo commit` went unscanned. It now finds the commit in any segment
+  (`git_target.py`) and, when the add has not run yet (or with `commit -a`),
+  scans pending files: unstaged and untracked.
+- `secret-scan.sh` scans added lines only (deleting a secret no longer
+  blocks), uses NUL-separated file lists, allows `.env.example`-style
+  templates, and honors `secret-scan:allow` / `gitleaks:allow` markers.
+  `secret-patterns.txt` widened.
+- `pre-push-guard.py` finds a push anywhere in the command, and the new
+  `gates.pushWrappers` (regexes) applies the push policy to project scripts
+  that push for you. prePush steps are skipped for a wrapper with no real
+  `git push` of its own.
+
+**Fixed: guards that blamed this session for another session's files**
+- `close-guard.py` is session-scoped: only files this session edited,
+  committed or named in its commands can block (`session_files.py`, from the
+  transcript). Foreign dirty files are counted, never listed as yours. Falls
+  back to the whole tree if the transcript is unreadable. Also checks repos
+  nested one level down and reports commits ahead of upstream.
+- `ratchet-guard.py` scopes to files this session touched, including ones it
+  already committed, so an early commit no longer escapes the ratchet.
+
+**Fixed: graph refresh**
+- `stop-graphify-refresh.py` also refreshes when graph.json `built_at_commit`
+  differs from `HEAD`, runs its worker as a script file instead of inline
+  `python -c`, and uses `CREATE_NO_WINDOW` on Windows.
+
+**Added**
+- `environment.forbiddenCommands[].unless`: optional regex that suppresses a
+  rule (tools broken in only one mode).
+- Rules: `context-economics.md` (re-reading context is the bill; compaction
+  loops from nested brain files and heavy MCP schemas), `evidence-states.md`
+  (six states, verify in the destination, canaries for advisory gates),
+  `headless-automation.md` (child sessions, scheduled jobs, hooks).
+- `subagent-economics.md`: model/effort table per task. Updates to
+  close-protocol, ratchet-philosophy, security-gates, environment-canonical,
+  graphify, learning-loop and operating-procedure.
+- Tests: compound/`-C`/`cd` commits, pending scan, deleted secret,
+  `.env.example`, allow marker, push wrappers, `unless`, session-scoped
+  close-guard with a fake transcript (33 cases).
+- Hook scripts are ASCII-only (cp1252 consoles).
+
+**Next (not in this release):** a SessionStart hook that syncs the checkout
+before work, and a UI smoke gate.
+
 ## 1.4.0 — 2026-08-09
 
 **Fixed — the documented install left every gate pointing at nothing**

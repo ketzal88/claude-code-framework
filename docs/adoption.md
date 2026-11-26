@@ -15,7 +15,7 @@ cp -r core/ your-project/.claude/core/
 `core/` is entirely language-agnostic. No edits needed.
 It contains:
 - `CLAUDE.template.md` — brain template with `{{placeholders}}`
-- `rules/` — 10 universal rules (operating-procedure, ratchet-philosophy, security-gates, commands-encode-workflows, close-protocol, environment-canonical, incident-triage, learning-loop, graphify, subagent-economics)
+- `rules/` — 13 universal rules (operating-procedure, ratchet-philosophy, security-gates, commands-encode-workflows, close-protocol, environment-canonical, incident-triage, learning-loop, graphify, subagent-economics, context-economics, evidence-states, headless-automation)
 - `commands/` — 6 universal slash commands
 - `hooks/` — hook scripts and settings template
 - `security/` — secret patterns and SAST adapter docs

@@ -34,6 +34,21 @@ Both follow the framework convention: absent key = silent no-op. The
 close-guard blocks exactly ONCE per close (`stop_hook_active` breaks the
 loop) — it is a reminder with teeth, not a wall.
 
+## Session scope (1.5.0)
+
+Several sessions often share one checkout. The close-guard only blocks on
+files **this session** edited, wrote, committed or named in its shell
+commands (read from the transcript via `session_files.py`). Other sessions'
+dirty files are reported as a count, never as yours:
+
+- `git add` the paths you changed **by name**. Never `git add -A` or `.`:
+  it sweeps another session's work into your commit.
+- Do not list another session's WIP in your final message.
+- If the transcript is unreadable, the guard falls back to the whole tree
+  (it never fails open).
+- Repos nested one level down are checked too, and commits ahead of
+  upstream are reported so the operator knows what is waiting to push.
+
 ## Why hooks and not prose
 
 The same audit showed that written rules ("always commit before

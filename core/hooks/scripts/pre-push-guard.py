@@ -8,6 +8,13 @@ All steps run regardless of individual failures (mirrors CI if:always()).
 
 SKIP_PREPUSH=1 allowed only when ALL changed files match CI_PATHS_IGNORE.
 
+1.5.0 - DETECTION: the push is found in any segment of the command
+(`cd x && git push`, `git -C x push`, `npm test && git push`), not only when
+the command starts with `git push`; the checks run in the directory the push
+targets. gates.pushWrappers (array of regexes) names project scripts that push
+on your behalf (e.g. "npm run (ship|release)"): they are treated as a push,
+so the operator-only policy cannot be dodged by calling the wrapper.
+
 Input contract (stdin JSON from Claude Code harness):
     { "tool_input": { "command": "git push ..." }, ... }
 """
@@ -30,6 +37,8 @@ CI_PATHS_IGNORE = [
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 READ_CONFIG = os.path.join(SCRIPT_DIR, "read-config.py")
+sys.path.insert(0, SCRIPT_DIR)
+import git_target  # noqa: E402
 
 
 def cfg(key):
@@ -44,13 +53,13 @@ def cfg(key):
         return None
 
 
-def changed_files():
+def changed_files(cwd=None):
     for args in [
         ["git", "diff", "--name-only", "origin/main...HEAD"],
         ["git", "diff", "--name-only", "HEAD~1"],
     ]:
         try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=10)
+            r = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=10)
             if r.returncode == 0 and r.stdout.strip():
                 return r.stdout.strip().splitlines()
         except Exception:
@@ -71,19 +80,41 @@ def tail(text, n):
 
 def main():
     try:
-        payload = json.load(sys.stdin)
+        payload = json.loads(sys.stdin.read().lstrip("\ufeff"))
     except Exception:
+        return 0
+    if not isinstance(payload, dict):
         return 0
 
     push_cmd = (payload.get("tool_input", {}) or {}).get("command", "") or ""
-    if not re.match(r"^\s*git\s+push(\s|$)", push_cmd):
-        return 0
-    if "--dry-run" in push_cmd:
+    if not push_cmd:
         return 0
 
-    # ── Push policy (close-protocol) ─────────────────────────────────────
+    pushes = git_target.find(push_cmd, git_target.base_dir(payload), "push")
+    real = [(a, d) for a, d in pushes if "--dry-run" not in a and "-n" not in a]
+    wrapper = None
+    wrappers_raw = None if real else cfg("gates.pushWrappers")
+    if wrappers_raw:
+        try:
+            wrappers = json.loads(wrappers_raw)
+        except Exception:
+            wrappers = []
+        for rx in wrappers if isinstance(wrappers, list) else []:
+            try:
+                if re.search(rx, push_cmd):
+                    wrapper = rx
+                    break
+            except re.error:
+                continue  # malformed pattern in config: never block on config bugs
+    if not real and not wrapper:
+        return 0
+    target_dir = real[0][1] if real else git_target.base_dir(payload)
+    if not os.path.isdir(target_dir):
+        target_dir = None
+
+    # -- Push policy (close-protocol) -------------------------------------
     # gates.push = "operator-only" in stack.json => the agent NEVER pushes:
-    # every `git push` (including --no-verify — that was the bypass agents
+    # every `git push` (including --no-verify - that was the bypass agents
     # kept trying) blocks instantly with the correct close instruction,
     # BEFORE burning minutes of checks on a push the operator will do by
     # hand anyway. Explicit exception: ALLOW_CLAUDE_PUSH=1 (operator asked
@@ -100,11 +131,11 @@ def main():
             )
             return 2
 
-    if "--no-verify" in push_cmd:
-        return 0
+    if "--no-verify" in push_cmd or (wrapper and not real):
+        return 0  # a wrapper runs its own checks; the policy above is what matters
 
     if os.environ.get("SKIP_PREPUSH") == "1":
-        files = changed_files()
+        files = changed_files(target_dir)
         if all_docs_only(files):
             return 0
         sys.stderr.write(
@@ -145,7 +176,7 @@ def main():
         env = {**os.environ, "NODE_OPTIONS": "--max-old-space-size=6144"}
         try:
             r = subprocess.run(
-                ["bash", "-c", check_cmd],
+                ["bash", "-c", check_cmd], cwd=target_dir,
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
                 timeout=remaining, env=env,
@@ -155,7 +186,7 @@ def main():
             remaining = 0
             continue
         except FileNotFoundError:
-            sys.stderr.write("[pre-push] bash not found — skipping guard.\n")
+            sys.stderr.write("[pre-push] bash not found - skipping guard.\n")
             return 0
         elapsed = time.monotonic() - start
         remaining = max(0, int(remaining - elapsed))
@@ -166,7 +197,7 @@ def main():
     if not failures:
         return 0
 
-    sys.stderr.write(f"[pre-push] {len(failures)} check(s) failed — blocking push:\n\n")
+    sys.stderr.write(f"[pre-push] {len(failures)} check(s) failed - blocking push:\n\n")
     for name, status, output in failures:
         sys.stderr.write(f"--- {name} ({status}) ---\n")
         for ln in tail(output, TAIL_LINES):

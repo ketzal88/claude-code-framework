@@ -108,6 +108,11 @@
           "enum": ["operator-only"],
           "description": "operator-only = the agent NEVER pushes (every git push blocks instantly with the close instruction, including --no-verify; --dry-run allowed). Explicit exception: ALLOW_CLAUDE_PUSH=1 runs the full prePush suite before allowing. Absent = agent pushes are gated by prePush steps only."
         },
+        "pushWrappers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Regexes for project scripts that push for you (an npm script that pushes several repos, a release script). The push policy applies to them like to a literal git push; prePush steps run when the command has no real git push of its own. Absent = only literal git push is gated."
+        },
         "closeProtocol": {
           "type": "string",
           "enum": ["blocking", "off"],
@@ -127,7 +132,8 @@
             "type": "object",
             "properties": {
               "pattern": { "type": "string", "description": "Regex tested against the raw Bash command." },
-              "fix": { "type": "string", "description": "The canonical alternative, shown verbatim to the agent." }
+              "fix": { "type": "string", "description": "The canonical alternative, shown verbatim to the agent." },
+              "unless": { "type": "string", "description": "Optional regex: the rule does not fire when the command also matches it (tools that only fail in one mode)." }
             },
             "required": ["pattern", "fix"],
             "additionalProperties": false

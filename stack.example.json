@@ -32,6 +32,7 @@
       "steps": ["typecheck", "lint", "test"]
     },
     "push": "operator-only",
+    "pushWrappers": ["(^|[;&|]\\s*)npm run release\\b"],
     "closeProtocol": "blocking"
   },
   "environment": {
