@@ -5,6 +5,13 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.7 - 2026-11-26
+
+Security: 1.5.6 decided whether to trust an alias from raw text, which quoting (`git conf''ig ...`) or a changed `PATH` could fool (review of 1.5.6).
+
+- `git_target.py`: only git builtins are trusted. Any other subcommand (an alias, an external `git-*` like `git lfs`) is OPAQUE, with no alias lookup and no text filter. Under `gates.push: "operator-only"` that blocks `git <alias>` and external git commands; the secret scan runs on them.
+- Tests: 82 cases.
+
 ## 1.5.6 - 2026-11-26
 
 Security: alias resolution now fails closed (review of 1.5.5).

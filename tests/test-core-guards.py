@@ -237,7 +237,11 @@ def config_cases():
         checks += [
             ("pre-push: config alias resolves to push", hook("pre-push-guard.py", bash("git p")), 2),
             ("pre-push: shell alias fails closed", hook("pre-push-guard.py", bash("git sp")), 2),
-            ("pre-push: harmless alias passes", hook("pre-push-guard.py", bash("git st")), 0),
+            ("pre-push: any alias fails closed", hook("pre-push-guard.py", bash("git st")), 2),
+            ("pre-push: quoted config call cannot hide a redefinition",
+             hook("pre-push-guard.py", bash("git conf''ig alias.st push; git st")), 2),
+            ("pre-push: PATH-swapped external fails closed",
+             hook("pre-push-guard.py", bash("PATH=/tmp/x:$PATH git lfs")), 2),
             ("pre-push: builtin still passes", hook("pre-push-guard.py", bash("git status")), 0),
             ("pre-push: alias defined in the same command",
              hook("pre-push-guard.py", bash("git config alias.zz push && git zz")), 2),
