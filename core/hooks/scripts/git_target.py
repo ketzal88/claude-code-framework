@@ -29,6 +29,9 @@ import shlex
 OPTS_WITH_VALUE = {"-C", "-c", "--exec-path", "--namespace", "--git-dir", "--work-tree"}
 ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(/|$)")
+# Prefixes that run the next word as the real command (`env git push`).
+WRAPPERS = {"env", "command", "exec", "nohup", "sudo", "time", "builtin", "xargs"}
+SHELLS = {"bash", "sh", "zsh", "dash", "bash.exe", "sh.exe"}
 
 
 def normalize(path):
@@ -49,8 +52,9 @@ def base_dir(payload):
 def segments(cmd):
     """Split a shell command on && || ; | & and newlines, respecting quotes.
 
-    Deliberately simple: no subshells or heredoc parsing. Good enough to find
-    a `git` word at command position, which is all the guards need.
+    Also splits on ( ) { } and backticks so `(cd x && git commit)` and
+    `{ git push; }` expose the git word. No heredoc parsing. Good enough to
+    find a `git` word at command position, which is all the guards need.
     """
     out, buf, quote, i = [], [], None, 0
     while i < len(cmd):
@@ -70,7 +74,7 @@ def segments(cmd):
             buf.append(ch)
             i += 1
             continue
-        if ch in ";\n|&":
+        if ch in ";\n|&(){}`":
             out.append("".join(buf))
             buf = []
             # swallow the second char of && and ||
@@ -104,13 +108,36 @@ def git_calls(cmd, start_dir):
     `directory` is where that git call operates (cd and -C applied).
     `args` are the words after the subcommand.
     """
-    cur = normalize(start_dir)
-    for seg in segments(cmd):
-        words = _words(seg)
-        # strip leading env assignments (FOO=1 git push)
-        while words and ENV_ASSIGN.match(words[0]):
+    yield from _git_calls(cmd, normalize(start_dir), 0)
+
+
+def _strip_prefixes(words):
+    """Drop env assignments and wrapper commands in front of the real command."""
+    while words:
+        w = words[0]
+        if ENV_ASSIGN.match(w):
             words = words[1:]
+        elif os.path.basename(w).lower() in WRAPPERS:
+            words = words[1:]
+            # wrapper options (env -i, sudo -u user, time -p): skip dash words
+            while words and words[0].startswith("-"):
+                words = words[1:]
+        else:
+            break
+    return words
+
+
+def _git_calls(cmd, cur, depth):
+    for seg in segments(cmd):
+        words = _strip_prefixes(_words(seg))
         if not words:
+            continue
+        # bash -c "git commit ..." / sh -lc '...': look inside the string
+        if os.path.basename(words[0]).lower() in SHELLS and depth < 3:
+            for j, w in enumerate(words[1:-1], start=1):
+                if w.startswith("-") and "c" in w[1:]:
+                    yield from _git_calls(words[j + 1], cur, depth + 1)
+                    break
             continue
         if words[0] == "cd":
             if len(words) > 1:

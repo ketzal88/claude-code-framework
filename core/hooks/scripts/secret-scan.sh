@@ -27,7 +27,6 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATTERNS_FILE="$SCRIPT_DIR/../../security/secret-patterns.txt"
 MODE="${SECRET_SCAN_MODE:-staged}"
-MAX_UNTRACKED_BYTES=1048576
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 HAS_HEAD=0
@@ -55,8 +54,6 @@ added_lines() {
         git ls-files --others --exclude-standard -z 2>/dev/null |
         while IFS= read -r -d '' f; do
             [ -f "$f" ] || continue
-            size=$(wc -c < "$f" 2>/dev/null || echo 0)
-            [ "$size" -gt "$MAX_UNTRACKED_BYTES" ] && continue
             grep -Iq . "$f" 2>/dev/null || continue   # skip binary / empty
             sed 's/^/+/' "$f"
         done

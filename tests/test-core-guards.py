@@ -116,6 +116,24 @@ def secret_scan_guard_cases():
             fh.write("aws = " + key + "\n")
         checks.append(("add -A && commit, untracked key", guard("git add -A && git commit -m x").returncode, 2))
         checks.append(("plain commit, key not staged", guard("git commit -m x").returncode, 0))
+        # 1.5.1: parser tricks that used to fall back to a staged-only scan
+        checks.append(("-a after -m value", guard("git commit -m x -a").returncode, 2))
+        checks.append(("pathspec after -m", guard("git commit -m x cfg.txt").returncode, 2))
+        os.makedirs(os.path.join(tmp, "sub"), exist_ok=True)
+        checks.append(("add in subdir, commit at root",
+                       guard("git -C sub add -A && git commit -m x").returncode, 2))
+        checks.append(("bash -c wrapper", guard('bash -c "git add -A && git commit -m x"').returncode, 2))
+        checks.append(("subshell", guard("(git add -A && git commit -m x)").returncode, 2))
+        checks.append(("env prefix", guard("env GIT_X=1 git commit -am x").returncode, 2))
+        checks.append(("dir created in same command",
+                       guard("mkdir nd && cd nd && git commit -m x").returncode, 2))
+        os.remove(os.path.join(tmp, "cfg.txt"))
+        with open(os.path.join(tmp, "big.txt"), "w") as fh:
+            fh.write(("x" * 100 + "\n") * 12000 + "aws = " + key + "\n")
+        checks.append(("untracked file over 1 MB", guard("git add -A && git commit -m x").returncode, 2))
+        os.remove(os.path.join(tmp, "big.txt"))
+        with open(os.path.join(tmp, "cfg.txt"), "w") as fh:
+            fh.write("aws = " + key + "\n")
 
         # a commit that DELETES a secret is not blocked (only added lines count)
         subprocess.run(["git", "add", "cfg.txt"], cwd=tmp, env=env)
@@ -172,7 +190,10 @@ def config_cases():
 
         checks = [
             ("pre-push: push inside a compound", hook("pre-push-guard.py", bash("npm test && git push")), 2),
-            ("pre-push: pushWrapper", hook("pre-push-guard.py", bash("npm run release")), 2),
+            ("pre-push: -o value is not --dry-run", hook("pre-push-guard.py", bash("git push -o -n origin main")), 2),
+            ("pre-push: real -n is a dry run", hook("pre-push-guard.py", bash("git push -n origin main")), 0),
+            ("pre-push: env wrapper", hook("pre-push-guard.py", bash("env git push")), 2),
+            ("pre-push: pushWrapper",hook("pre-push-guard.py", bash("npm run release")), 2),
             ("pre-push: unrelated npm script", hook("pre-push-guard.py", bash("npm run build")), 0),
             ("canonical: pattern fires", hook("canonical-guard.py", bash("foo login")), 2),
             ("canonical: unless suppresses", hook("canonical-guard.py", bash("foo login --token $T")), 0),

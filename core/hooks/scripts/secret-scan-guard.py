@@ -30,16 +30,48 @@ BLOCK = 2  # Claude Code: exit 2 = deny the tool and show stderr to the model
 ALLOW = 0
 
 
+# `git commit` options that take the next word as their value.
+COMMIT_OPTS_WITH_VALUE = {
+    "-m", "-F", "-C", "-c", "-t", "--message", "--file", "--reuse-message",
+    "--reedit-message", "--template", "--author", "--date", "--fixup",
+    "--squash", "--cleanup", "--trailer",
+}
+
+
 def commit_stages_more(args):
-    """True if `git commit` itself stages files (-a, --all, -am, ...)."""
-    for a in args:
-        if a == "--all":
+    """True if `git commit` itself picks up more than the index.
+
+    That is -a/--all (also inside a short cluster such as -am), -i/-o/
+    --include/--only, or any pathspec (a positional word, or anything after
+    `--`). Option values (-m "msg", --author x) are skipped, not parsed, so
+    a message cannot hide a later -a or pathspec.
+    """
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            return i + 1 < len(args)
+        if a in ("--all", "--include", "--only"):
             return True
-        if a.startswith("-") and not a.startswith("--") and "a" in a[1:]:
-            # short-flag cluster such as -am; stop at -m's value (next word)
-            return True
-        if a in ("-m", "-F", "--message", "--file"):
-            break
+        if a in COMMIT_OPTS_WITH_VALUE:
+            i += 2
+            continue
+        if a.startswith("--"):
+            i += 1
+            continue
+        if a.startswith("-") and len(a) > 1:
+            flags = a[1:]
+            for j, ch in enumerate(flags):
+                if ch in "aio":
+                    return True
+                if "-" + ch in COMMIT_OPTS_WITH_VALUE:
+                    # -mmsg carries its value inline; -m alone takes the next word
+                    if j == len(flags) - 1:
+                        i += 1
+                    break
+            i += 1
+            continue
+        return True  # positional word = pathspec
     return False
 
 
@@ -56,12 +88,13 @@ def main():
 
     calls = list(git_target.git_calls(cmd, git_target.base_dir(payload)))
     targets = {}  # directory -> mode
-    added_dirs = set()
+    # Any staging call anywhere in the command (add, stage, rm, mv) makes every
+    # commit in it a pending scan. Comparing directories is not safe: `git add`
+    # in a subfolder and `git commit` at the root are the same repo.
+    stages = any(sub in ("add", "stage", "rm", "mv") for sub, _a, _d in calls)
     for sub, args, directory in calls:
-        if sub == "add":
-            added_dirs.add(directory)
-        elif sub == "commit":
-            pending = directory in added_dirs or commit_stages_more(args)
+        if sub == "commit":
+            pending = stages or commit_stages_more(args)
             if pending or directory not in targets:
                 targets[directory] = "pending" if pending else "staged"
     if not targets:
@@ -80,7 +113,12 @@ def main():
 
     for directory, mode in targets.items():
         if not os.path.isdir(directory):
-            continue  # cd into a dir that does not exist: git will fail on its own
+            # The command creates the directory before committing in it, so
+            # there is nothing to scan yet. Fail closed: commit in a second call.
+            print(f"secret-scan-guard: {directory} does not exist yet, so its "
+                  f"commit cannot be scanned. Create it first, then commit in a "
+                  f"separate command.", file=sys.stderr)
+            sys.exit(BLOCK)
         env = dict(os.environ, SECRET_SCAN_MODE=mode)
         rc = subprocess.call(["bash", script], cwd=directory, env=env)
         if rc != 0:

@@ -5,6 +5,27 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.1 - 2026-11-26
+
+**Fixed: five ways around the 1.5.0 gates** (found by a security review of 1.5.0)
+- `secret-scan-guard.py`: `git commit -m x -a` and `git commit -m x <path>`
+  were read as staged-only commits, because parsing stopped at `-m`. Option
+  values are now skipped, and `-a`, `-i`, `-o` and any pathspec mean a
+  pending scan.
+- `secret-scan-guard.py`: `git -C sub add -A && git commit` compared
+  directories, saw two different ones and scanned only the index. Any
+  add/stage/rm/mv in the command now makes every commit in it pending.
+- `secret-scan-guard.py`: a commit in a directory the same command creates
+  was skipped. It now blocks and asks for the commit in a separate call.
+- `git_target.py`: `env git ...`, `command`/`exec`/`nohup`/`sudo`/`time`
+  prefixes, `bash -c "..."` and `( ... )` / `{ ...; }` groups hid the git
+  word. All are unwrapped now.
+- `pre-push-guard.py`: `git push -o -n` was taken as a dry run because `-n`
+  appeared anywhere in the args. Only a real `-n` / `--dry-run` flag counts.
+- `secret-scan.sh`: untracked files over 1 MB were skipped in pending mode.
+  They are scanned now (streamed, binaries still skipped).
+- Tests: 44 cases.
+
 ## 1.5.0 - 2026-11-26
 
 **Adopters:** re-copy `core/` (two new shared modules, `git_target.py` and

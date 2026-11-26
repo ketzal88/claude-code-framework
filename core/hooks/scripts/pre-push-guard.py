@@ -78,6 +78,33 @@ def tail(text, n):
     return lines[-n:] if len(lines) > n else lines
 
 
+# `git push` options that take the next word as their value.
+PUSH_OPTS_WITH_VALUE = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
+
+
+def is_dry_run(args):
+    """True only for a real -n/--dry-run flag, not a word that is an option value."""
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            return False
+        if a in PUSH_OPTS_WITH_VALUE:
+            i += 2
+            continue
+        if a == "--dry-run":
+            return True
+        if a.startswith("-") and not a.startswith("--") and len(a) > 1:
+            flags = a[1:]
+            for ch in flags:
+                if ch == "n":
+                    return True
+                if ch == "o":
+                    break  # -oVALUE: the rest is the value
+        i += 1
+    return False
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read().lstrip("\ufeff"))
@@ -91,7 +118,7 @@ def main():
         return 0
 
     pushes = git_target.find(push_cmd, git_target.base_dir(payload), "push")
-    real = [(a, d) for a, d in pushes if "--dry-run" not in a and "-n" not in a]
+    real = [(a, d) for a, d in pushes if not is_dry_run(a)]
     wrapper = None
     wrappers_raw = None if real else cfg("gates.pushWrappers")
     if wrappers_raw:
