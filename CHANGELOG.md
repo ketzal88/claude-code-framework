@@ -5,6 +5,25 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.2 - 2026-11-26
+
+Second security pass on the command parser, and per-repo manifests on push.
+
+- `git_target.py`: `{` and `}` only split a command when they stand alone as a
+  word, so `git commit -m{x} -a` keeps its `-a`. Wrapper options that take a
+  value are consumed (`sudo -u git git commit`), `env -S "..."`, `eval "..."`
+  and `bash -o opt -c "..."` are read as nested commands. A git call the parser
+  cannot see into (nested deeper than 3 levels, `bash -c` with no readable
+  string) comes back as `OPAQUE` and the guards assume the worst.
+- `secret-scan-guard.py`: deny by default. Any `git commit` option the guard
+  does not know (`--pathspec-from-file`, a future flag) triggers the pending
+  scan; only a short list of known-safe flags keeps the staged-only scan.
+- `pre-push-guard.py`: reads `stack.json` from the directory the push runs in,
+  so a nested repo with its own manifest gets its own gates (one without a
+  manifest falls back to the parent's). An opaque git call next to the word
+  `push` is treated as a push.
+- Tests: 55 cases (11 new).
+
 ## 1.5.1 - 2026-11-26
 
 **Fixed: five ways around the 1.5.0 gates** (found by a security review of 1.5.0)

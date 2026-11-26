@@ -41,12 +41,17 @@ sys.path.insert(0, SCRIPT_DIR)
 import git_target  # noqa: E402
 
 
-def cfg(key):
-    """Read a dotted key from stack.json via read-config.py."""
+def cfg(key, repo=None):
+    """Read a dotted key from stack.json via read-config.py.
+
+    `repo` is the directory the push runs in: read-config searches upward from
+    it, so a nested repo with its own stack.json gets its own gates, and one
+    without a manifest falls back to the parent's.
+    """
     try:
         r = subprocess.run(
             [sys.executable, READ_CONFIG, key],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=5, cwd=repo or None,
         )
         return r.stdout.strip() if r.returncode == 0 else None
     except Exception:
@@ -119,6 +124,9 @@ def main():
 
     pushes = git_target.find(push_cmd, git_target.base_dir(payload), "push")
     real = [(a, d) for a, d in pushes if not is_dry_run(a)]
+    if "push" in push_cmd:
+        # git hidden in a shell string the parser could not read: assume a push
+        real += [([], d) for d in git_target.opaque(push_cmd, git_target.base_dir(payload))]
     wrapper = None
     wrappers_raw = None if real else cfg("gates.pushWrappers")
     if wrappers_raw:
@@ -146,7 +154,7 @@ def main():
     # BEFORE burning minutes of checks on a push the operator will do by
     # hand anyway. Explicit exception: ALLOW_CLAUDE_PUSH=1 (operator asked
     # in chat) -> the full check suite below runs before allowing it.
-    if cfg("gates.push") == "operator-only":
+    if cfg("gates.push", target_dir) == "operator-only":
         allow = os.environ.get("ALLOW_CLAUDE_PUSH") == "1" or "ALLOW_CLAUDE_PUSH=1" in push_cmd
         if not allow:
             sys.stderr.write(
@@ -172,7 +180,7 @@ def main():
         return 2
 
     # Resolve steps from manifest
-    steps_raw = cfg("gates.prePush.steps")
+    steps_raw = cfg("gates.prePush.steps", target_dir)
     if not steps_raw:
         return 0  # no manifest or no steps configured
 
@@ -185,7 +193,7 @@ def main():
 
     checks = []
     for step in steps:
-        cmd_val = cfg(f"commands.{step}") or cfg(f"ratchets.{step}")
+        cmd_val = cfg(f"commands.{step}", target_dir) or cfg(f"ratchets.{step}", target_dir)
         if cmd_val:
             checks.append((step, cmd_val))
 

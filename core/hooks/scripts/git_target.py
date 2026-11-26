@@ -31,7 +31,23 @@ ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(/|$)")
 # Prefixes that run the next word as the real command (`env git push`).
 WRAPPERS = {"env", "command", "exec", "nohup", "sudo", "time", "builtin", "xargs"}
+# Wrapper options that consume the next word (`sudo -u git git push` must not
+# read the user name as the command).
+WRAPPER_OPTS_WITH_VALUE = {
+    "sudo": {"-u", "-g", "-C", "-h", "-p", "-U", "-r", "-t", "-D", "-R", "-T"},
+    "env": {"-u", "-C", "--unset", "--chdir"},
+    "exec": {"-a"},
+    "time": {"-f", "-o", "--format", "--output"},
+    "xargs": {"-I", "-n", "-L", "-d", "-E", "-P", "-s", "-a", "--arg-file",
+              "--delimiter", "--max-args", "--max-procs"},
+}
 SHELLS = {"bash", "sh", "zsh", "dash", "bash.exe", "sh.exe"}
+SHELL_OPTS_WITH_VALUE = {"-o", "-O", "+o", "+O", "--rcfile", "--init-file"}
+GIT_WORDS = {"git", "git.exe"}
+# Pseudo-subcommand for a git call the parser could not see into (a shell
+# string nested too deep, `bash -c` without a readable string). Guards treat
+# it as the worst case instead of letting it through.
+OPAQUE = "__opaque__"
 
 
 def normalize(path):
@@ -52,8 +68,9 @@ def base_dir(payload):
 def segments(cmd):
     """Split a shell command on && || ; | & and newlines, respecting quotes.
 
-    Also splits on ( ) { } and backticks so `(cd x && git commit)` and
-    `{ git push; }` expose the git word. No heredoc parsing. Good enough to
+    Also splits on ( ) and backticks (always shell metacharacters) and on
+    { } when they stand alone as a word, so `(cd x && git commit)` and
+    `{ git push; }` expose the git word while `-m{x}` stays one word. No heredoc parsing. Good enough to
     find a `git` word at command position, which is all the guards need.
     """
     out, buf, quote, i = [], [], None, 0
@@ -74,6 +91,10 @@ def segments(cmd):
             buf.append(ch)
             i += 1
             continue
+        if ch in "{}" and not _standalone(cmd, i):
+            buf.append(ch)  # a brace inside a word (-m{x}) is literal, not a group
+            i += 1
+            continue
         if ch in ";\n|&(){}`":
             out.append("".join(buf))
             buf = []
@@ -86,6 +107,14 @@ def segments(cmd):
         i += 1
     out.append("".join(buf))
     return [s.strip() for s in out if s.strip()]
+
+
+def _standalone(cmd, i):
+    """True if cmd[i] is a word of its own (bash only treats { } as reserved then)."""
+    before = cmd[i - 1] if i > 0 else " "
+    after = cmd[i + 1] if i + 1 < len(cmd) else " "
+    seps = " \t\n;&|()"
+    return before in seps and after in seps
 
 
 def _words(segment):
@@ -112,38 +141,77 @@ def git_calls(cmd, start_dir):
 
 
 def _strip_prefixes(words):
-    """Drop env assignments and wrapper commands in front of the real command."""
+    """Drop env assignments and wrapper commands in front of the real command.
+
+    Returns (words, inner) where inner is a command string handed to a wrapper
+    (`env -S "git push"`), or None.
+    """
+    wrapped = False
     while words:
         w = words[0]
+        name = os.path.basename(w).lower()
         if ENV_ASSIGN.match(w):
             words = words[1:]
-        elif os.path.basename(w).lower() in WRAPPERS:
+        elif name in WRAPPERS:
+            wrapped = True
+            with_value = WRAPPER_OPTS_WITH_VALUE.get(name, set())
             words = words[1:]
-            # wrapper options (env -i, sudo -u user, time -p): skip dash words
             while words and words[0].startswith("-"):
-                words = words[1:]
+                opt = words[0]
+                if name == "env" and opt in ("-S", "--split-string") and len(words) > 1:
+                    return [], words[1]
+                if opt.startswith("--split-string=") or (name == "env" and opt.startswith("-S") and len(opt) > 2):
+                    return [], opt.split("=", 1)[1] if "=" in opt else opt[2:]
+                words = words[2:] if opt in with_value else words[1:]
         else:
             break
-    return words
+    if wrapped and words and os.path.basename(words[0]).lower() not in GIT_WORDS | SHELLS:
+        # Unknown wrapper option with a value: fall back to the first git word.
+        for k, w in enumerate(words):
+            if os.path.basename(w).lower() in GIT_WORDS:
+                return words[k:], None
+    return words, None
+
+
+def _shell_string(words):
+    """The command string of `bash [opts] -c STRING`, or None."""
+    i = 1
+    while i < len(words):
+        w = words[i]
+        if w in SHELL_OPTS_WITH_VALUE:
+            i += 2
+            continue
+        if w.startswith("-") and not w.startswith("--") and "c" in w[1:]:
+            return words[i + 1] if i + 1 < len(words) else None
+        if w.startswith("-") or w.startswith("+"):
+            i += 1
+            continue
+        return None  # `bash script.sh`: a file, not a string we can read
+    return None
 
 
 def _git_calls(cmd, cur, depth):
     for seg in segments(cmd):
-        words = _strip_prefixes(_words(seg))
+        words, inner = _strip_prefixes(_words(seg))
+        if inner is not None:
+            yield from _nested(inner, cur, depth, seg)
+            continue
         if not words:
             continue
-        # bash -c "git commit ..." / sh -lc '...': look inside the string
-        if os.path.basename(words[0]).lower() in SHELLS and depth < 3:
-            for j, w in enumerate(words[1:-1], start=1):
-                if w.startswith("-") and "c" in w[1:]:
-                    yield from _git_calls(words[j + 1], cur, depth + 1)
-                    break
+        name = os.path.basename(words[0]).lower()
+        # bash -c "git commit ..." / sh -lc '...' / eval "...": look inside
+        if name in SHELLS or name == "eval":
+            inner = " ".join(words[1:]) if name == "eval" else _shell_string(words)
+            if inner is not None:
+                yield from _nested(inner, cur, depth, seg)
+            elif "git" in seg:
+                yield OPAQUE, words[1:], cur
             continue
         if words[0] == "cd":
             if len(words) > 1:
                 cur = _resolve(cur, words[1])
             continue
-        if os.path.basename(words[0]).lower() not in ("git", "git.exe"):
+        if name not in GIT_WORDS:
             continue
         here = cur
         i = 1
@@ -162,6 +230,19 @@ def _git_calls(cmd, cur, depth):
             break
         if sub:
             yield sub, words[i + 1:], here
+
+
+def _nested(inner, cur, depth, seg):
+    if depth >= 3:
+        if "git" in seg:
+            yield OPAQUE, [], cur  # too deep to read: let the guard assume the worst
+        return
+    yield from _git_calls(inner, cur, depth + 1)
+
+
+def opaque(cmd, start_dir):
+    """Directories of git calls hidden in a shell string the parser could not read."""
+    return [d for s, _a, d in git_calls(cmd, start_dir) if s == OPAQUE]
 
 
 def find(cmd, start_dir, subcommand):

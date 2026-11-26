@@ -127,6 +127,17 @@ def secret_scan_guard_cases():
         checks.append(("env prefix", guard("env GIT_X=1 git commit -am x").returncode, 2))
         checks.append(("dir created in same command",
                        guard("mkdir nd && cd nd && git commit -m x").returncode, 2))
+        # 1.5.2: parser differentials found by review
+        checks.append(("brace inside -m value", guard("git commit -m{x} -a").returncode, 2))
+        checks.append(("--pathspec-from-file", guard("git commit -m x --pathspec-from-file=l").returncode, 2))
+        checks.append(("unknown long option", guard("git commit -m x --future-flag").returncode, 2))
+        checks.append(("sudo -u <value>", guard("sudo -u git git commit -am x").returncode, 2))
+        checks.append(("bash -o <value> -c", guard('bash -o pipefail -c "git commit -am x"').returncode, 2))
+        checks.append(("eval string", guard('eval "git commit -am x"').returncode, 2))
+        checks.append(("env -S string", guard('env -S "git commit -am x"').returncode, 2))
+        deep = 'bash -c "bash -c \\"bash -c \\\\\\"bash -c git\\\\\\" commit\\""'
+        checks.append(("nested too deep fails closed", guard(deep).returncode, 2))
+        checks.append(("safe flags stay staged-only", guard("git commit -qm x --no-verify").returncode, 0))
         os.remove(os.path.join(tmp, "cfg.txt"))
         with open(os.path.join(tmp, "big.txt"), "w") as fh:
             fh.write(("x" * 100 + "\n") * 12000 + "aws = " + key + "\n")
@@ -177,6 +188,11 @@ def config_cases():
         with open(os.path.join(tmp, "stack.json"), "w") as fh:
             json.dump(stack, fh)
         subprocess.run(["git", "init", "-q"], cwd=tmp, env=ENV)
+        inner = os.path.join(tmp, "inner")
+        os.makedirs(inner)
+        subprocess.run(["git", "init", "-q"], cwd=inner, env=ENV)
+        with open(os.path.join(inner, "stack.json"), "w") as fh:
+            json.dump({"gates": {}}, fh)  # no push policy in the nested repo
         env = dict(ENV, CLAUDE_PROJECT_DIR=tmp)
 
         def hook(script, payload):
@@ -193,6 +209,10 @@ def config_cases():
             ("pre-push: -o value is not --dry-run", hook("pre-push-guard.py", bash("git push -o -n origin main")), 2),
             ("pre-push: real -n is a dry run", hook("pre-push-guard.py", bash("git push -n origin main")), 0),
             ("pre-push: env wrapper", hook("pre-push-guard.py", bash("env git push")), 2),
+            ("pre-push: nested repo uses its own stack.json",
+             hook("pre-push-guard.py", bash("git -C inner push")), 0),
+            ("pre-push: bash -c too deep fails closed",
+             hook("pre-push-guard.py", bash('bash -c "bash -c \\"bash -c \\\\\\"bash -c git push\\\\\\"\\""')), 2),
             ("pre-push: pushWrapper",hook("pre-push-guard.py", bash("npm run release")), 2),
             ("pre-push: unrelated npm script", hook("pre-push-guard.py", bash("npm run build")), 0),
             ("canonical: pattern fires", hook("canonical-guard.py", bash("foo login")), 2),

@@ -36,39 +36,52 @@ COMMIT_OPTS_WITH_VALUE = {
     "--reedit-message", "--template", "--author", "--date", "--fixup",
     "--squash", "--cleanup", "--trailer",
 }
+# Long options known NOT to add anything beyond the index. Anything else
+# (--pathspec-from-file, a typo, a future flag) is treated as staging more:
+# deny by default, the cost is only a wider scan.
+COMMIT_SAFE_LONG = {
+    "--quiet", "--verbose", "--signoff", "--no-signoff", "--no-verify",
+    "--verify", "--no-edit", "--edit", "--amend", "--allow-empty",
+    "--allow-empty-message", "--dry-run", "--short", "--porcelain", "--long",
+    "--null", "--status", "--no-status", "--reset-author", "--no-post-rewrite",
+    "--gpg-sign", "--no-gpg-sign", "--untracked-files", "--branch",
+}
+# Short flags known not to stage more (a, i, o and unknown letters do).
+COMMIT_SAFE_SHORT = set("qvsneSzu")
 
 
 def commit_stages_more(args):
-    """True if `git commit` itself picks up more than the index.
+    """True if `git commit` itself may pick up more than the index.
 
     That is -a/--all (also inside a short cluster such as -am), -i/-o/
-    --include/--only, or any pathspec (a positional word, or anything after
-    `--`). Option values (-m "msg", --author x) are skipped, not parsed, so
-    a message cannot hide a later -a or pathspec.
+    --include/--only, any pathspec (a positional word, or anything after
+    `--`), and any option this guard does not know. Option values (-m "msg",
+    --author x) are skipped, not parsed, so a message cannot hide a later -a.
     """
     i = 0
     while i < len(args):
         a = args[i]
         if a == "--":
             return i + 1 < len(args)
-        if a in ("--all", "--include", "--only"):
-            return True
         if a in COMMIT_OPTS_WITH_VALUE:
             i += 2
             continue
         if a.startswith("--"):
-            i += 1
-            continue
+            name = a.split("=", 1)[0]
+            if name in COMMIT_OPTS_WITH_VALUE or name in COMMIT_SAFE_LONG:
+                i += 1
+                continue
+            return True  # --all, --include, --only, --pathspec-from-file, unknown
         if a.startswith("-") and len(a) > 1:
             flags = a[1:]
             for j, ch in enumerate(flags):
-                if ch in "aio":
-                    return True
                 if "-" + ch in COMMIT_OPTS_WITH_VALUE:
                     # -mmsg carries its value inline; -m alone takes the next word
                     if j == len(flags) - 1:
                         i += 1
                     break
+                if ch not in COMMIT_SAFE_SHORT:
+                    return True  # a, i, o or a flag we do not know
             i += 1
             continue
         return True  # positional word = pathspec
@@ -93,7 +106,10 @@ def main():
     # in a subfolder and `git commit` at the root are the same repo.
     stages = any(sub in ("add", "stage", "rm", "mv") for sub, _a, _d in calls)
     for sub, args, directory in calls:
-        if sub == "commit":
+        if sub == git_target.OPAQUE:
+            # A git call hidden where the parser cannot read it: scan everything.
+            targets[directory] = "pending"
+        elif sub == "commit":
             pending = stages or commit_stages_more(args)
             if pending or directory not in targets:
                 targets[directory] = "pending" if pending else "staged"
