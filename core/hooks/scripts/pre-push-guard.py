@@ -20,6 +20,10 @@ only the first, and the project root manifest is the floor (a nested
 stack.json can tighten gates.push, never loosen it). Steps run per target;
 a target whose manifest lists none inherits the root's.
 
+1.5.5 - PARSER HOLES CLOSED: `! git push`, `if git push; then`, git aliases
+(`-c alias.p=push p` and aliases in config) and `-n --no-dry-run` (the last
+flag wins) no longer slip past the policy.
+
 Input contract (stdin JSON from Claude Code harness):
     { "tool_input": { "command": "git push ..." }, ... }
 """
@@ -92,26 +96,31 @@ PUSH_OPTS_WITH_VALUE = {"-o", "--push-option", "--repo", "--receive-pack", "--ex
 
 
 def is_dry_run(args):
-    """True only for a real -n/--dry-run flag, not a word that is an option value."""
+    """True only for a real -n/--dry-run flag, not a word that is an option value.
+
+    The last flag wins, like git's own parser: `-n --no-dry-run` is a real push.
+    """
+    dry = False
     i = 0
     while i < len(args):
         a = args[i]
         if a == "--":
-            return False
+            break
         if a in PUSH_OPTS_WITH_VALUE:
             i += 2
             continue
         if a == "--dry-run":
-            return True
-        if a.startswith("-") and not a.startswith("--") and len(a) > 1:
-            flags = a[1:]
-            for ch in flags:
+            dry = True
+        elif a == "--no-dry-run":
+            dry = False
+        elif a.startswith("-") and not a.startswith("--") and len(a) > 1:
+            for ch in a[1:]:
                 if ch == "n":
-                    return True
+                    dry = True
                 if ch == "o":
                     break  # -oVALUE: the rest is the value
         i += 1
-    return False
+    return dry
 
 
 def parse_steps(raw):
@@ -138,9 +147,10 @@ def main():
 
     pushes = git_target.find(push_cmd, git_target.base_dir(payload), "push")
     real = [(a, d) for a, d in pushes if not is_dry_run(a)]
-    if "push" in push_cmd:
-        # git hidden in a shell string the parser could not read: assume a push
-        real += [([], d) for d in git_target.opaque(push_cmd, git_target.base_dir(payload))]
+    # git hidden where the parser cannot see (a shell string too deep, a
+    # `-c alias.*`, a shell alias): assume a push. 1.5.5 dropped the old
+    # `"push" in cmd` condition, since an alias from config never names it.
+    real += [([], d) for d in git_target.opaque(push_cmd, git_target.base_dir(payload))]
     wrapper = None
     wrappers_raw = None if real else cfg("gates.pushWrappers")
     if wrappers_raw:

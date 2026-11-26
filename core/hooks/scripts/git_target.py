@@ -16,6 +16,10 @@ So the command is split into segments on && || ; | and newlines (outside
 quotes), each segment is parsed with shlex, a `cd X` segment moves the working
 directory for the segments after it, and `git -C X` moves it for that one call.
 
+1.5.5: shell reserved words in front of git (`! git push`, `if git push;
+then`) are dropped like wrappers; `git -c alias.*` is OPAQUE; an alias from
+git config is expanded (a shell alias `!...` is OPAQUE).
+
 On Windows, MSYS paths (/c/Users/...) are converted to C:/Users/... so the
 directory can be handed to subprocess.
 
@@ -24,6 +28,7 @@ ASCII-only on purpose: hook consoles on Windows are often cp1252.
 import os
 import re
 import shlex
+import subprocess
 
 # Global git options that consume the next argument (`git -C dir`, `git -c k=v`).
 OPTS_WITH_VALUE = {"-C", "-c", "--exec-path", "--namespace", "--git-dir", "--work-tree"}
@@ -44,6 +49,9 @@ WRAPPER_OPTS_WITH_VALUE = {
 SHELLS = {"bash", "sh", "zsh", "dash", "bash.exe", "sh.exe"}
 SHELL_OPTS_WITH_VALUE = {"-o", "-O", "+o", "+O", "--rcfile", "--init-file"}
 GIT_WORDS = {"git", "git.exe"}
+# Shell reserved words that can sit in front of a command (`! git push`,
+# `if git push; then`, `while git push; do`). Dropped like a wrapper (1.5.5).
+RESERVED = {"!", "if", "then", "else", "elif", "do", "while", "until", "{"}
 # Pseudo-subcommand for a git call the parser could not see into (a shell
 # string nested too deep, `bash -c` without a readable string). Guards treat
 # it as the worst case instead of letting it through.
@@ -150,7 +158,7 @@ def _strip_prefixes(words):
     while words:
         w = words[0]
         name = os.path.basename(w).lower()
-        if ENV_ASSIGN.match(w):
+        if ENV_ASSIGN.match(w) or w in RESERVED:
             words = words[1:]
         elif name in WRAPPERS:
             wrapped = True
@@ -216,8 +224,13 @@ def _git_calls(cmd, cur, depth):
         here = cur
         i = 1
         sub = None
+        aliased = False
         while i < len(words):
             w = words[i]
+            if w == "-c" and i + 1 < len(words) and words[i + 1].lower().startswith("alias."):
+                aliased = True  # `git -c alias.p=push p`: the real subcommand is hidden
+            elif w.startswith("-c") and w[2:].lower().startswith("alias."):
+                aliased = True
             if w.startswith(("--git-dir=", "--work-tree=")):
                 w, val = w.split("=", 1)
                 words = words[:i] + [w, val] + words[i + 1:]
@@ -236,8 +249,53 @@ def _git_calls(cmd, cur, depth):
                 continue
             sub = w
             break
+        if aliased:
+            yield OPAQUE, words[i + 1:] if sub else [], here
+            continue
         if sub:
-            yield sub, words[i + 1:], here
+            sub, args = _expand_alias(sub, words[i + 1:], here)
+            yield sub, args, here
+
+
+def _expand_alias(sub, args, here, hops=0):
+    """Resolve a git alias from config (`git p` with alias.p=push).
+
+    Git ignores aliases that shadow a builtin, so a builtin never resolves.
+    A shell alias (`!...`) or a chain deeper than 5 comes back as OPAQUE.
+    """
+    if sub == OPAQUE or hops > 5:
+        return OPAQUE, args
+    try:
+        r = subprocess.run(
+            ["git", "config", "--get", "alias." + sub], cwd=here if os.path.isdir(here) else None,
+            capture_output=True, text=True, timeout=3,
+        )
+    except Exception:
+        return sub, args
+    value = (r.stdout or "").strip() if r.returncode == 0 else ""
+    if not value or _is_builtin(sub, here):
+        return sub, args
+    if value.startswith("!"):
+        return OPAQUE, args
+    parts = _words(value)
+    if not parts:
+        return sub, args
+    return _expand_alias(parts[0], parts[1:] + args, here, hops + 1)
+
+
+_BUILTINS = None
+
+
+def _is_builtin(sub, here):
+    """True when `sub` is a git builtin (aliases cannot override those)."""
+    global _BUILTINS
+    if _BUILTINS is None:
+        try:
+            r = subprocess.run(["git", "--list-cmds=main"], capture_output=True, text=True, timeout=3)
+            _BUILTINS = set(r.stdout.split()) if r.returncode == 0 else set()
+        except Exception:
+            _BUILTINS = set()
+    return sub in _BUILTINS
 
 
 def _nested(inner, cur, depth, seg):

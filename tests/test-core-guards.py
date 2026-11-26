@@ -215,9 +215,29 @@ def config_cases():
              hook("pre-push-guard.py", bash('bash -c "bash -c \\"bash -c \\\\\\"bash -c git push\\\\\\"\\""')), 2),
             ("pre-push: pushWrapper",hook("pre-push-guard.py", bash("npm run release")), 2),
             ("pre-push: unrelated npm script", hook("pre-push-guard.py", bash("npm run build")), 0),
+            ("pre-push: ! in front of git", hook("pre-push-guard.py", bash("! git push")), 2),
+            ("pre-push: if/then in front of git",
+             hook("pre-push-guard.py", bash("if git push; then :; fi")), 2),
+            ("pre-push: while/do in front of git",
+             hook("pre-push-guard.py", bash("while true; do git push; done")), 2),
+            ("pre-push: -c alias.* hides the subcommand",
+             hook("pre-push-guard.py", bash("git -c alias.p=push p")), 2),
+            ("pre-push: --no-dry-run after -n is a real push",
+             hook("pre-push-guard.py", bash("git push -n --no-dry-run")), 2),
+            ("pre-push: -n after --no-dry-run is a dry run",
+             hook("pre-push-guard.py", bash("git push --no-dry-run -n")), 0),
             ("canonical: pattern fires", hook("canonical-guard.py", bash("foo login")), 2),
             ("canonical: unless suppresses", hook("canonical-guard.py", bash("foo login --token $T")), 0),
             ("canonical: anchored, no false hit", hook("canonical-guard.py", bash("npm view foo login")), 0),
+        ]
+        # aliases already in the repo config
+        subprocess.run(["git", "config", "alias.p", "push"], cwd=tmp, env=ENV)
+        subprocess.run(["git", "config", "alias.sp", "!git push"], cwd=tmp, env=ENV)
+        subprocess.run(["git", "config", "alias.st", "status"], cwd=tmp, env=ENV)
+        checks += [
+            ("pre-push: config alias resolves to push", hook("pre-push-guard.py", bash("git p")), 2),
+            ("pre-push: shell alias fails closed", hook("pre-push-guard.py", bash("git sp")), 2),
+            ("pre-push: harmless alias passes", hook("pre-push-guard.py", bash("git st")), 0),
         ]
 
         # close-guard, session-scoped: two dirty code files, only one touched by this session

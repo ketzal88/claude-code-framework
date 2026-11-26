@@ -5,6 +5,15 @@ Adopters: `core/` is copied, not linked. To update, re-copy `core/` over your
 in `stack.json`, your own rules, or your own scripts) and diff
 `settings.template.json` against your `settings.json` for new hooks.
 
+## 1.5.5 - 2026-11-26
+
+Security: three ways to hide a push from the guards, found in review.
+
+- `git_target.py`: shell reserved words before git (`!`, `if`, `then`, `else`, `elif`, `do`, `while`, `until`, `{`) are dropped, so `! git push` and `if git push; then :; fi` are seen.
+- `git_target.py`: `git -c alias.*` yields OPAQUE; an alias already in git config is expanded to its real subcommand (a shell alias `!...` yields OPAQUE). Builtins are never resolved as aliases, like git itself.
+- `pre-push-guard.py`: `is_dry_run` lets the last flag win, so `git push -n --no-dry-run` is a real push. OPAQUE calls always count as a push (the old `"push" in cmd` check missed config aliases).
+- Tests: 71 cases.
+
 ## 1.5.4 - 2026-11-26
 
 - `secret-patterns.txt`: Google API keys (`AIza...`), upstreamed from an
